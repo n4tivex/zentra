@@ -183,6 +183,9 @@ class ZENTRAOrchestrator:
                 for w in validation.warnings:
                     ticker_log.warning("validation_warning", warning=w)
 
+                # Clean dataframe (drop NaNs that break JSON and indicators)
+                df = df.dropna(subset=["open", "high", "low", "close", "volume"])
+
                 # Fix negative volumes before analysis
                 if "volume" in df.columns:
                     df.loc[df["volume"] < 0, "volume"] = 0
