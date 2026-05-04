@@ -1,0 +1,45 @@
+name: ZENTRA Morning Scan
+on:
+  schedule:
+    - cron: '45 1 * * 1-5'   # 08:45 WIB = 01:45 UTC, Mon-Fri
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scan mode override'
+        required: false
+        default: 'morning'
+
+concurrency:
+  group: zentra-morning
+  cancel-in-progress: false
+
+jobs:
+  morning-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ZENTRA Morning Scan
+        run: python main.py --mode morning
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          ZENTRA_ENV: production

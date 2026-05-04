@@ -1,0 +1,45 @@
+name: ZENTRA Closing Scan
+on:
+  schedule:
+    - cron: '45 9 * * 1-5'   # 16:45 WIB = 09:45 UTC, Mon-Fri
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scan mode override'
+        required: false
+        default: 'closing'
+
+concurrency:
+  group: zentra-closing
+  cancel-in-progress: false
+
+jobs:
+  closing-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ZENTRA Closing Scan
+        run: python main.py --mode closing
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          ZENTRA_ENV: production

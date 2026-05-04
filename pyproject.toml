@@ -1,0 +1,23 @@
+[project]
+name = "zentra"
+version = "1.0.0"
+description = "ZENTRA — Automated IDX Equity Signal Engine"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
