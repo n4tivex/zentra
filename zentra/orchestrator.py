@@ -108,7 +108,8 @@ class ZENTRAOrchestrator:
         # 3b. Holiday detection per PRD §5.3
         # Fetch 1 day of BBCA to check if market is open today
         try:
-            end = today_dt
+            # yfinance end date is exclusive, so we must add 1 day to fetch today's bar
+            end = today_dt + timedelta(days=1)
             start = today_dt - timedelta(days=5)
             sample = yf.download(
                 "BBCA.JK",
@@ -121,8 +122,10 @@ class ZENTRAOrchestrator:
                 last_trade = sample.index[-1]
                 if hasattr(last_trade, 'tz') and last_trade.tz is not None:
                     last_trade = last_trade.tz_convert('UTC').tz_localize(None)
-                days_since = (today_dt.replace(tzinfo=None) - last_trade).days
-                if days_since > 1 and self._mode == "closing":
+                
+                # If last trade is not today, market is either closed or data is delayed
+                days_since = (today_dt.replace(tzinfo=None).date() - last_trade.date()).days
+                if days_since > 0 and self._mode == "closing":
                     log.info("market_likely_holiday", last_trade=str(last_trade.date()), days_since=days_since)
                     if sender:
                         await sender.send_signal(MARKET_CLOSED_HOLIDAY)
