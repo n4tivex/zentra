@@ -153,3 +153,41 @@ def format_daily_summary(
         "_ZENTRA v1\\.0 · IDX Swing Engine_",
     ]
     return "\n".join(lines)
+
+
+def format_weekly_performance_summary(
+    date_str: str,
+    total_closed: int,
+    wins: int,
+    losses: int,
+    win_rate_pct: float,
+    avg_return_pct: float,
+    top_performers: list[dict],
+    active_count: int,
+) -> str:
+    """Format weekly performance summary message per PRD Phase 2."""
+    esc = escape_markdown_v2
+
+    lines = [
+        f"📈 *ZENTRA Weekly Performance*",
+        f"\\({esc(date_str)}\\)",
+        "",
+        f"*Win Rate Keseluruhan*: {esc(f'{win_rate_pct:.1f}')}% \\({wins} Win / {losses} Loss\\)",
+        f"*Rata\\-rata Return*: {esc(f'{avg_return_pct:+.2f}')}% per trade",
+        "",
+    ]
+
+    if top_performers:
+        lines.append("*Top Performers \\(All\\-Time\\)*:")
+        for idx, p in enumerate(top_performers[:5], 1):
+            t = p["ticker"]
+            wr = p["win_rate_pct"]
+            ret = p["avg_return_pct"]
+            lines.append(f"{idx}\\. {esc(t)}: {esc(f'{wr:.0f}')}% WR \\({esc(f'{ret:+.1f}')}%\\)")
+        lines.append("")
+
+    lines.append(f"*Sinyal yang Masih Active*: {active_count} Ticker")
+    lines.append("")
+    lines.append("_Laporan Mingguan Otomatis ZENTRA_")
+
+    return "\n".join(lines)

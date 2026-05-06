@@ -115,3 +115,37 @@ class SignalsRepo:
         except Exception as e:
             log.error("db_expire_signals_failed", error=str(e))
             raise DatabaseError(f"Failed to expire old signals") from e
+
+    def get_all_closed_signals(self) -> list[dict]:
+        """Get all closed signals for performance tracking."""
+        try:
+            result = (
+                self._client.table(self._table)
+                .select("*")
+                .in_("status", [
+                    SignalStatus.CLOSED_TP.value,
+                    SignalStatus.CLOSED_SL.value,
+                    SignalStatus.CLOSED_EXIT_SIGNAL.value,
+                ])
+                .execute()
+            )
+            return result.data or []
+        except Exception as e:
+            log.error("db_get_closed_signals_failed", error=str(e))
+            raise DatabaseError("Failed to get closed signals") from e
+
+    def get_active_signals_count(self) -> int:
+        """Get the total number of currently active signals."""
+        try:
+            # Supabase python client doesn't support count() elegantly with select without data, 
+            # so we just select id.
+            result = (
+                self._client.table(self._table)
+                .select("id")
+                .eq("status", SignalStatus.ACTIVE.value)
+                .execute()
+            )
+            return len(result.data) if result.data else 0
+        except Exception as e:
+            log.error("db_get_active_count_failed", error=str(e))
+            return 0

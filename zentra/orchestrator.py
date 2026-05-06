@@ -44,6 +44,7 @@ from zentra.telegram.formatter import (
     format_daily_summary,
     format_exit_message,
     format_watch_message,
+    format_weekly_performance_summary,
 )
 from zentra.telegram.sender import TelegramSender
 
@@ -409,6 +410,61 @@ class ZENTRAOrchestrator:
                         f"🔴 ZENTRA FAILED: {len(failed_tickers)}/{total} ticker gagal"
                     )
                 )
+
+        # 12. Weekly Performance Summary (Phase 2)
+        if self._mode == "closing" and datetime.now(tz=timezone.utc).weekday() == 4:
+            if signals_repo:
+                try:
+                    closed_signals = signals_repo.get_all_closed_signals()
+                    active_count = signals_repo.get_active_signals_count()
+                    
+                    if closed_signals:
+                        wins = sum(1 for s in closed_signals if float(s.get("exit_pct", 0)) > 0)
+                        losses = len(closed_signals) - wins
+                        win_rate = (wins / len(closed_signals)) * 100
+                        avg_return = sum(float(s.get("exit_pct", 0)) for s in closed_signals) / len(closed_signals)
+                        
+                        ticker_perf = {}
+                        for s in closed_signals:
+                            t = s["ticker"]
+                            if t not in ticker_perf:
+                                ticker_perf[t] = {"wins": 0, "total": 0, "returns": []}
+                            ticker_perf[t]["total"] += 1
+                            ticker_perf[t]["returns"].append(float(s.get("exit_pct", 0)))
+                            if float(s.get("exit_pct", 0)) > 0:
+                                ticker_perf[t]["wins"] += 1
+                                
+                        top_performers = []
+                        for t, perf in ticker_perf.items():
+                            wr = (perf["wins"] / perf["total"]) * 100
+                            avg_ret = sum(perf["returns"]) / perf["total"]
+                            top_performers.append({
+                                "ticker": t,
+                                "win_rate_pct": wr,
+                                "avg_return_pct": avg_ret
+                            })
+                        
+                        top_performers.sort(key=lambda x: (x["win_rate_pct"], x["avg_return_pct"]), reverse=True)
+                        
+                        summary_msg = format_weekly_performance_summary(
+                            date_str=self._today,
+                            total_closed=len(closed_signals),
+                            wins=wins,
+                            losses=losses,
+                            win_rate_pct=win_rate,
+                            avg_return_pct=avg_return,
+                            top_performers=top_performers,
+                            active_count=active_count,
+                        )
+                        
+                        if sender and not self._dry_run:
+                            # Send to channel (batch sends to TELEGRAM_CHAT_ID)
+                            await sender.send_batch([summary_msg])
+                        else:
+                            safe_msg = summary_msg[:300].encode("ascii", errors="replace").decode("ascii")
+                            log.info("dry_run_weekly_summary", message=safe_msg)
+                except Exception as e:
+                    log.error("weekly_summary_failed", error=str(e))
 
         log.info(
             "run_completed",
