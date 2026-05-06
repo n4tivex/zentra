@@ -2,6 +2,8 @@ name: ZENTRA Closing Scan
 on:
   schedule:
     - cron: '45 9 * * 1-5'   # 16:45 WIB = 09:45 UTC, Mon-Fri
+  repository_dispatch:
+    types: [trigger-closing-scan]
   workflow_dispatch:
     inputs:
       mode:

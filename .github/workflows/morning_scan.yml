@@ -2,6 +2,8 @@ name: ZENTRA Morning Scan
 on:
   schedule:
     - cron: '45 1 * * 1-5'   # 08:45 WIB = 01:45 UTC, Mon-Fri
+  repository_dispatch:
+    types: [trigger-morning-scan]
   workflow_dispatch:
     inputs:
       mode:
