@@ -54,7 +54,7 @@ class TelegramSender:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=2, max=8),
-        retry=retry_if_exception_type((TimedOut, NetworkError, OSError, ConnectionError)),
+        retry=retry_if_exception_type((TimedOut, NetworkError, OSError, ConnectionError, RetryAfter)),
         reraise=True,
     )
     async def _send_with_retry(self, chat_id: str, message: str) -> None:

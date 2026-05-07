@@ -107,7 +107,7 @@ class ScoringConfig:
 class DataConfig:
     LOOKBACK_DAYS: int = 90
     MIN_TRADING_DAYS: int = 30
-    STALE_DATA_THRESHOLD_DAYS: int = 5
+    STALE_DATA_THRESHOLD_DAYS: int = 14
     FETCH_RETRY_ATTEMPTS: int = 3
     OHLCV_RETENTION_DAYS: int = 90
 

@@ -169,8 +169,21 @@ class ZENTRAOrchestrator:
             ticker_log = log.bind(ticker=ticker)
             try:
                 df = all_data.get(ticker)
-                if df is None:
+                if df is None or df.empty:
                     ticker_log.warning("no_data_for_ticker")
+                    failed_tickers.append(ticker)
+                    continue
+
+                # --- FIX 1: Morning Scan Contamination ---
+                # Drop today's partial candle if in morning mode so we evaluate yesterday's close
+                if self._mode == "morning" and not df.empty:
+                    last_date_str = pd.Timestamp(df.index[-1]).strftime("%Y-%m-%d")
+                    if last_date_str == self._today:
+                        df = df.iloc[:-1]
+                        ticker_log.info("dropped_partial_today_candle")
+                        
+                if df.empty:
+                    ticker_log.warning("empty_after_drop")
                     failed_tickers.append(ticker)
                     continue
 
