@@ -10,6 +10,7 @@ import random
 import time
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 import structlog
 import yfinance as yf
 
