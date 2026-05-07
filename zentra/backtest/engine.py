@@ -166,14 +166,23 @@ class BacktestEngine:
         self,
         tickers: list[str] | None = None,
         months: int = 6,
+        prefetched_data: dict[str, pd.DataFrame] | None = None,
     ) -> BacktestResult:
         """Run the full walk-forward backtest."""
         tickers = tickers or list(TICKERS)
 
-        # 1. Fetch all historical data upfront
-        all_data = self.fetch_historical(tickers, months)
+        # 1. Fetch all historical data upfront or use prefetched
+        all_data = prefetched_data if prefetched_data is not None else self.fetch_historical(tickers, months)
         if not all_data:
             raise RuntimeError("No historical data available for backtest")
+
+        # 1.5 Precalculate indicators upfront (massively speeds up backtest)
+        for ticker in list(all_data.keys()):
+            try:
+                all_data[ticker] = self.indicators.compute_all(all_data[ticker])
+            except Exception as e:
+                log.warning("backtest_indicator_failed", ticker=ticker, error=str(e))
+                del all_data[ticker]
 
         # 2. Determine the common date range (after warmup)
         all_dates: set[datetime] = set()
@@ -222,9 +231,11 @@ class BacktestEngine:
                 if len(df_slice) < self.MIN_WARMUP_DAYS:
                     continue
 
-                # Get current close
+                # Get current prices
                 try:
                     current_close = float(df_slice.iloc[-1]["close"])
+                    current_low = float(df_slice.iloc[-1]["low"])
+                    current_high = float(df_slice.iloc[-1]["high"])
                 except (KeyError, IndexError):
                     continue
 
@@ -238,15 +249,15 @@ class BacktestEngine:
                     if hasattr(current_date, 'date'):
                         days_held = (current_date - entry_dt).days
 
-                    # TP hit
-                    if current_close >= trade.take_profit:
-                        self._close_trade(trade, date_str, trade.take_profit, "TP hit")
+                    # SL hit (check low price first to be conservative)
+                    if current_low <= trade.stop_loss:
+                        self._close_trade(trade, date_str, trade.stop_loss, "SL hit")
                         del active_signals[ticker]
                         all_trades.append(trade)
                         equity += trade.pnl_pct or 0
-                    # SL hit
-                    elif current_close <= trade.stop_loss:
-                        self._close_trade(trade, date_str, trade.stop_loss, "SL hit")
+                    # TP hit
+                    elif current_high >= trade.take_profit:
+                        self._close_trade(trade, date_str, trade.take_profit, "TP hit")
                         del active_signals[ticker]
                         all_trades.append(trade)
                         equity += trade.pnl_pct or 0
@@ -259,8 +270,8 @@ class BacktestEngine:
                     else:
                         # Check technical EXIT conditions
                         try:
-                            df_ind = self.indicators.compute_all(df_slice)
-                            exit_result = self.scorer.check_exit(ticker, df_ind, {
+                            # indicators are already precalculated in df_slice
+                            exit_result = self.scorer.check_exit(ticker, df_slice, {
                                 "entry_price": int(trade.entry_price),
                                 "stop_loss": int(trade.stop_loss),
                                 "take_profit": int(trade.take_profit),
@@ -289,8 +300,8 @@ class BacktestEngine:
                     continue
 
                 try:
-                    df_ind = self.indicators.compute_all(df_slice)
-                    buy_result = self.scorer.score_buy(ticker, df_ind)
+                    # indicators already precalculated in df_slice
+                    buy_result = self.scorer.score_buy(ticker, df_slice)
 
                     if buy_result.signal_type == SignalType.BUY and buy_result.entry_price:
                         trade = Trade(

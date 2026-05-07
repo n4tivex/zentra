@@ -90,8 +90,8 @@ class SignalResult:
 
 @dataclass(frozen=True)
 class ScoringConfig:
-    BUY_THRESHOLD: int = 70
-    WATCH_THRESHOLD: int = 55
+    BUY_THRESHOLD: int = 55
+    WATCH_THRESHOLD: int = 45
     MIN_CONFLUENCE: int = 3
     MIN_CONFLUENCE_WATCH: int = 2
     MIN_RR_RATIO: float = 1.5

@@ -28,13 +28,13 @@ class TuneCombo:
 
 COMBOS = [
     TuneCombo("A_baseline",      buy_threshold=70, min_confluence=3, sl_atr=1.5, tp_atr=2.5),
-    TuneCombo("B_buy75",         buy_threshold=75, min_confluence=3, sl_atr=1.5, tp_atr=2.5),
-    TuneCombo("C_buy80",         buy_threshold=80, min_confluence=3, sl_atr=1.5, tp_atr=2.5),
-    TuneCombo("D_buy75_conf4",   buy_threshold=75, min_confluence=4, sl_atr=1.5, tp_atr=2.5),
-    TuneCombo("E_buy80_conf4",   buy_threshold=80, min_confluence=4, sl_atr=1.5, tp_atr=2.5),
-    TuneCombo("F_buy75_tp2.0",   buy_threshold=75, min_confluence=3, sl_atr=1.5, tp_atr=2.0),
-    TuneCombo("G_buy80_tp2.0",   buy_threshold=80, min_confluence=3, sl_atr=1.5, tp_atr=2.0),
-    TuneCombo("H_buy75_tp2.0_sl1.2", buy_threshold=75, min_confluence=3, sl_atr=1.2, tp_atr=2.0),
+    TuneCombo("C_buy60_sl1.5_tp2.5", buy_threshold=60, min_confluence=3, sl_atr=1.5, tp_atr=2.5),
+    TuneCombo("C_buy60_sl1.5_tp3.0", buy_threshold=60, min_confluence=3, sl_atr=1.5, tp_atr=3.0),
+    TuneCombo("C_buy60_sl1.5_tp2.0", buy_threshold=60, min_confluence=3, sl_atr=1.5, tp_atr=2.0),
+    TuneCombo("C_buy60_sl1.2_tp2.5", buy_threshold=60, min_confluence=3, sl_atr=1.2, tp_atr=2.5),
+    TuneCombo("C_buy60_sl1.2_tp3.0", buy_threshold=60, min_confluence=3, sl_atr=1.2, tp_atr=3.0),
+    TuneCombo("C_buy55_sl1.5_tp2.5", buy_threshold=55, min_confluence=3, sl_atr=1.5, tp_atr=2.5),
+    TuneCombo("C_buy55_sl1.2_tp3.0", buy_threshold=55, min_confluence=3, sl_atr=1.2, tp_atr=3.0),
 ]
 
 
@@ -74,7 +74,7 @@ def main() -> None:
         # Run backtest with pre-fetched data
         engine2 = BacktestEngine()  # Fresh engine
         try:
-            result = engine2.run(tickers=tickers, months=months)
+            result = engine2.run(tickers=tickers, months=months, prefetched_data=all_data)
             results.append((combo, result))
             print(f"   -> Signals={result.total_signals}, "
                   f"WinRate={result.win_rate:.1f}%, "

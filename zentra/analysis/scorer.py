@@ -25,7 +25,7 @@ class SignalScorer:
     def __init__(self) -> None:
         self.risk_calc = RiskCalculator()
 
-    def score_buy(self, ticker: str, df: pd.DataFrame) -> SignalResult:
+    def score_buy(self, ticker: str, df: pd.DataFrame, is_exit_check: bool = False) -> SignalResult:
         """Score a ticker for BUY signal potential.
 
         Uses the latest row of indicator data.
@@ -162,8 +162,8 @@ class SignalScorer:
         total_score = sum(scores.values())
 
         # Trend filter: heavily penalize buying if price is below short-term trend (EMA20)
-        # Prevents buying falling knives in bear markets
-        if close and ema20 and close < ema20:
+        # Prevents buying falling knives in bear markets (skip if we're just checking exit score)
+        if not is_exit_check and close and ema20 and close < ema20:
             total_score -= 30
 
         # Confluence: count of 5 main indicators that gave a positive score
@@ -242,29 +242,23 @@ class SignalScorer:
 
         exit_reasons: list[str] = []
 
-        # RSI >= 70 — overbought
+        # Hard Exits (no grace period)
         if rsi >= 70:
             exit_reasons.append("RSI overbought")
-
-        # Close >= Take Profit
         if tp and close >= tp:
             exit_reasons.append("Target price reached")
-
-        # Close <= Stop Loss
         if sl and close <= sl:
             exit_reasons.append("Stop loss hit")
 
-        # MACD bearish crossover today
+        # Soft Exits (no holding period, just check if technicals degrade)
         macd_cross_down = (macd < macd_signal) and (prev_macd >= prev_signal)
         if macd_cross_down:
             exit_reasons.append("MACD bearish crossover")
 
-        # Close above BBU
         if bbu and close > bbu:
             exit_reasons.append("Price above upper Bollinger Band")
 
-        # Score dropped below threshold
-        buy_result = self.score_buy(ticker, df)
+        buy_result = self.score_buy(ticker, df, is_exit_check=True)
         if buy_result.score < SCORING.EXIT_SCORE_THRESHOLD:
             exit_reasons.append("Setup score dropped below threshold")
 
