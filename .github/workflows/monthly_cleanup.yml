@@ -1,7 +1,5 @@
 name: ZENTRA Monthly Cleanup
 on:
-  schedule:
-    - cron: '0 0 1 * *'
   repository_dispatch:
     types: [trigger-monthly-cleanup]
   workflow_dispatch:
