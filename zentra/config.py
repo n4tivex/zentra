@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from zentra.exceptions import ConfigurationError
 
@@ -53,6 +53,7 @@ class ValidationResult:
     is_valid: bool
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    cleaned_df: Any | None = None
 
 
 @dataclass
