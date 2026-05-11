@@ -25,7 +25,29 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Monthly Cleanup
+        id: cleanup
         run: python scripts/cleanup.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Retry on failure
+        if: failure() && steps.cleanup.outcome == 'failure'
+        run: |
+          echo "First attempt failed, retrying after 15s..."
+          sleep 15
+          python scripts/cleanup.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Notify admin on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_ADMIN_CHAT_ID}" \
+            -d text="⚠️ ZENTRA Monthly Cleanup FAILED — GitHub Actions run ${{ github.run_id }}" \
+            -d parse_mode="HTML" || true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}

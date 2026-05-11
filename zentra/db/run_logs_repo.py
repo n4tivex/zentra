@@ -13,6 +13,7 @@ import structlog
 from supabase import Client
 
 from zentra.exceptions import DatabaseError
+from zentra.config import RunStatus
 
 log = structlog.get_logger()
 
@@ -28,7 +29,7 @@ class RunLogsRepo:
         """Create a new run log and return its ID."""
         record: dict[str, Any] = {
             "run_mode": mode,
-            "status": "RUNNING",
+            "status": RunStatus.RUNNING.value,
             "github_run_id": os.getenv("GITHUB_RUN_ID", "local"),
         }
         try:
@@ -44,7 +45,7 @@ class RunLogsRepo:
         self,
         run_id: str,
         *,
-        status: str,
+        status: str | RunStatus,
         duration_seconds: float | None = None,
         tickers_scanned: int | None = None,
         tickers_failed: list[str] | None = None,

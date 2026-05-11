@@ -33,9 +33,9 @@ def test_macd_zero_values_are_not_silently_dropped(bullish_df: pd.DataFrame):
     df["MACDh_12_26_9"] = 0.2
 
     df["RSI_14"] = 45.0
-    df["BBL_20_2.0"] = 95.0
-    df["BBM_20_2.0"] = 100.0
-    df["BBU_20_2.0"] = 110.0
+    df["BBL_20_2.0_2.0"] = 95.0
+    df["BBM_20_2.0_2.0"] = 100.0
+    df["BBU_20_2.0_2.0"] = 110.0
     df["VOL_SMA_20"] = 1000
     df["ATRr_14"] = 3.0
 
@@ -60,6 +60,8 @@ def test_validator_returns_cleaned_dataframe(minimal_df: pd.DataFrame):
 
 
 def test_exit_priority_prefers_take_profit(exit_setup_df: pd.DataFrame):
+    from zentra.config import SignalStatus
+
     scorer = SignalScorer()
 
     active_signal = {
@@ -73,10 +75,16 @@ def test_exit_priority_prefers_take_profit(exit_setup_df: pd.DataFrame):
     df["RSI_14"] = 72
     df["MACD_12_26_9"] = 1.0
     df["MACDs_12_26_9"] = 0.5
-    df["BBU_20_2.0"] = 115
+    df["BBU_20_2.0_2.0"] = 115
 
     result = scorer.check_exit("BBCA", df, active_signal)
 
     assert result is not None
-    assert result.reason == "RSI overbought" or "Target price reached" in result.exit_reasons
     assert "Target price reached" in result.exit_reasons
+    assert "RSI overbought" in result.exit_reasons
+    # P0-5: TP (priority 2) should come before RSI (priority 3) in the list
+    tp_idx = result.exit_reasons.index("Target price reached")
+    rsi_idx = result.exit_reasons.index("RSI overbought")
+    assert tp_idx < rsi_idx, "TP should have higher priority than RSI overbought"
+    # exit_status should be CLOSED_TP since TP has higher priority
+    assert result.exit_status == SignalStatus.CLOSED_TP

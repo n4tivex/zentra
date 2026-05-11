@@ -44,10 +44,14 @@ class TestSignalScorer:
         assert result.signal_type != SignalType.BUY or result.score < 70
 
     def test_rr_below_minimum_returns_no_signal(self, scorer):
-        """If RR ratio is below 1.5, should return NO_SIGNAL."""
-        # Create a DataFrame where ATR is very small relative to price
-        # This makes the RR ratio calculation unfavorable
+        """If RR ratio is below 1.5, should return NO_SIGNAL.
+
+        ATR too small raises CalculationError — that's expected and valid.
+        If indicators compute successfully, the RR gate should block BUY.
+        """
         import numpy as np
+        from zentra.exceptions import CalculationError
+
         np.random.seed(42)
         dates = pd.date_range("2026-04-01", periods=40, freq="B")
         close = [1000 + i * 0.1 for i in range(40)]  # Very flat, tiny ATR
@@ -60,13 +64,10 @@ class TestSignalScorer:
         }, index=dates)
 
         from zentra.analysis.indicators import TechnicalIndicators
-        try:
-            df_ind = TechnicalIndicators().compute_all(df)
-            result = scorer.score_buy("TEST", df_ind)
-            # With tiny ATR, should get low ATR score
-            assert result.indicator_snapshot.get("atr_14", 0) < 10 or result.score >= 0
-        except Exception:
-            pass  # ATR too small raises CalculationError, which is expected
+
+        # With only 40 rows, EMA_50 won't have enough data and will be NaN
+        with pytest.raises(CalculationError, match="Critical indicator columns are NaN"):
+            TechnicalIndicators().compute_all(df)
 
     def test_score_components_sum_to_100_max(self, scorer, indicators, bullish_df):
         """Total score should never exceed 100."""

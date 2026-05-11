@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from supabase import Client
 
-from zentra.config import SCORING, SignalResult, SignalStatus, SignalType
+from zentra.config import SCORING, VALID_TRANSITIONS, SignalResult, SignalStatus, SignalType
 from zentra.exceptions import DatabaseError
 
 log = structlog.get_logger()
@@ -80,6 +80,16 @@ class SignalsRepo:
             log.error("db_create_signal_failed", ticker=result.ticker, error=str(e))
             raise DatabaseError(f"Failed to create signal for {result.ticker}") from e
 
+    @staticmethod
+    def _validate_transition(current: SignalStatus, target: SignalStatus) -> None:
+        """Validate that a status transition is legal per P1-13 lifecycle."""
+        allowed = VALID_TRANSITIONS.get(current, ())
+        if target not in allowed:
+            raise DatabaseError(
+                f"Invalid signal transition: {current.value} → {target.value}. "
+                f"Allowed: {[s.value for s in allowed]}"
+            )
+
     def close_signal(
         self,
         signal_id: str,
@@ -87,6 +97,9 @@ class SignalsRepo:
         exit_price: int,
         entry_price: int,
     ) -> None:
+        # Validate transition from ACTIVE
+        self._validate_transition(SignalStatus.ACTIVE, status)
+
         exit_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price else 0
 
         try:
@@ -95,8 +108,10 @@ class SignalsRepo:
                 "exit_price": exit_price,
                 "exit_pct": round(exit_pct, 2),
                 "closed_at": datetime.now(tz=timezone.utc).isoformat(),
-            }).eq("id", signal_id).execute()
+            }).eq("id", signal_id).eq("status", SignalStatus.ACTIVE.value).execute()
             log.info("signal_closed", signal_id=signal_id, status=status.value)
+        except DatabaseError:
+            raise
         except Exception as e:
             log.error("db_close_signal_failed", signal_id=signal_id, error=str(e))
             raise DatabaseError(f"Failed to close signal {signal_id}") from e
@@ -115,15 +130,19 @@ class SignalsRepo:
 
             expired = result.data or []
             for signal in expired:
+                # Validate transition
+                self._validate_transition(SignalStatus.ACTIVE, SignalStatus.EXPIRED)
                 self._client.table(self._table).update({
                     "status": SignalStatus.EXPIRED.value,
                     "closed_at": datetime.now(tz=timezone.utc).isoformat(),
-                }).eq("id", signal["id"]).execute()
+                }).eq("id", signal["id"]).eq("status", SignalStatus.ACTIVE.value).execute()
 
             if expired:
                 log.info("signals_expired", count=len(expired))
 
             return expired
+        except DatabaseError:
+            raise
         except Exception as e:
             log.error("db_expire_signals_failed", error=str(e))
             raise DatabaseError("Failed to expire old signals") from e

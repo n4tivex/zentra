@@ -44,6 +44,39 @@ class RunMode(str, Enum):
     MANUAL = "manual"
 
 
+class RunStatus(str, Enum):
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+
+
+class ExitPriority(int, Enum):
+    """Deterministic exit priority — lower value = higher priority."""
+    STOP_LOSS = 1
+    TAKE_PROFIT = 2
+    HARD_EXIT = 3      # RSI overbought, etc.
+    SOFT_EXIT = 4      # MACD crossover, score drop, etc.
+
+
+# ---------------------------------------------------------------------------
+# Signal lifecycle state machine (P1-13)
+# ---------------------------------------------------------------------------
+
+VALID_TRANSITIONS: dict[SignalStatus, tuple[SignalStatus, ...]] = {
+    SignalStatus.ACTIVE: (
+        SignalStatus.CLOSED_TP,
+        SignalStatus.CLOSED_SL,
+        SignalStatus.CLOSED_EXIT_SIGNAL,
+        SignalStatus.EXPIRED,
+    ),
+    SignalStatus.CLOSED_TP: (),
+    SignalStatus.CLOSED_SL: (),
+    SignalStatus.CLOSED_EXIT_SIGNAL: (),
+    SignalStatus.EXPIRED: (),
+}
+
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -83,6 +116,7 @@ class SignalResult:
     reason: Optional[str] = None
     signal_strength: SignalStrength = SignalStrength.NORMAL
     exit_reasons: list[str] = field(default_factory=list)
+    exit_status: Optional[SignalStatus] = None
 
 
 # ---------------------------------------------------------------------------
@@ -156,22 +190,59 @@ TICKER_NAMES: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# Environment helpers
+# DataFrame schema contracts (P1-10)
 # ---------------------------------------------------------------------------
 
-REQUIRED_ENV_VARS = [
+OHLCV_REQUIRED_COLUMNS: tuple[str, ...] = ("open", "high", "low", "close", "volume")
+
+INDICATOR_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "EMA_20", "EMA_50",
+    "MACD_12_26_9", "MACDh_12_26_9", "MACDs_12_26_9",
+    "RSI_14",
+    "BBL_20_2.0_2.0", "BBM_20_2.0_2.0", "BBU_20_2.0_2.0",
+    "ATRr_14",
+    "VOL_SMA_20",
+)
+
+
+# ---------------------------------------------------------------------------
+# Environment helpers (P2-20)
+# ---------------------------------------------------------------------------
+
+REQUIRED_ENV_VARS: list[str] = [
     "SUPABASE_URL",
     "SUPABASE_SERVICE_KEY",
     "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_CHAT_ID",
+    "TELEGRAM_ADMIN_CHAT_ID",
 ]
 
 
-def validate_env() -> None:
-    """Validate that all required environment variables are set."""
+def validate_env(mode: str | None = None) -> None:
+    """Validate that all required environment variables are set.
+
+    Args:
+        mode: Optional run mode. When provided, also validates mode-specific vars.
+
+    Raises:
+        ConfigurationError: If any required env var is missing.
+    """
     missing = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
     if missing:
-        raise ConfigurationError(f"Missing required env vars: {', '.join(missing)}")
+        raise ConfigurationError(
+            f"Missing required env vars: {', '.join(missing)}. "
+            f"Set them in .env or as environment variables."
+        )
+
+    # Validate values are not just whitespace
+    empty = [
+        var for var in REQUIRED_ENV_VARS
+        if os.getenv(var, "").strip() == "" and var not in missing
+    ]
+    if empty:
+        raise ConfigurationError(
+            f"Env vars set but empty: {', '.join(empty)}"
+        )
 
 
 def get_env(name: str, default: str = "") -> str:

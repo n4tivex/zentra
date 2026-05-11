@@ -34,7 +34,9 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run ZENTRA Closing Scan
-        run: python main.py --mode closing
+        id: scan
+        run: |
+          python main.py --mode closing
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -43,3 +45,29 @@ jobs:
           TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           ZENTRA_ENV: production
+
+      - name: Retry on failure
+        if: failure() && steps.scan.outcome == 'failure'
+        run: |
+          echo "First attempt failed, retrying after 30s..."
+          sleep 30
+          python main.py --mode closing
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          ZENTRA_ENV: production
+
+      - name: Notify admin on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_ADMIN_CHAT_ID}" \
+            -d text="⚠️ ZENTRA Closing Scan FAILED — GitHub Actions run ${{ github.run_id }}" \
+            -d parse_mode="HTML" || true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}

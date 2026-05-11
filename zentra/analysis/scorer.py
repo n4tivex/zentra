@@ -11,7 +11,9 @@ import structlog
 from zentra.analysis.risk import RiskCalculator
 from zentra.config import (
     SCORING,
+    ExitPriority,
     SignalResult,
+    SignalStatus,
     SignalStrength,
     SignalType,
 )
@@ -30,7 +32,15 @@ class SignalScorer:
         return value is not None and not pd.isna(value)
 
     def score_buy(self, ticker: str, df: pd.DataFrame, is_exit_check: bool = False) -> SignalResult:
-        """Score a ticker for BUY signal potential."""
+        """Score a ticker for BUY signal potential.
+
+        Gating hierarchy (P1-12):
+        1. RR ratio < MIN_RR_RATIO → hard gate → NO_SIGNAL (no matter the score)
+        2. close < EMA20 → scoring penalty (-30 pts, only for non-exit checks)
+        3. confluence < MIN_CONFLUENCE → qualifying gate → demote to WATCH or NO_SIGNAL
+        4. score >= BUY_THRESHOLD + confluence >= MIN_CONFLUENCE → BUY
+        5. score >= WATCH_THRESHOLD + confluence >= MIN_CONFLUENCE_WATCH → WATCH
+        """
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) >= 2 else last
 
@@ -106,9 +116,9 @@ class SignalScorer:
             rsi = 0.0
 
         close = last.get("close")
-        bbl = last.get("BBL_20_2.0")
-        bbm = last.get("BBM_20_2.0")
-        bbu = last.get("BBU_20_2.0")
+        bbl = last.get("BBL_20_2.0_2.0")
+        bbm = last.get("BBM_20_2.0_2.0")
+        bbu = last.get("BBU_20_2.0_2.0")
         if all(self._is_valid_number(v) for v in (close, bbl, bbm, bbu)):
             close_f = float(close)
             bbl_f = float(bbl)
@@ -170,7 +180,7 @@ class SignalScorer:
             "macd_histogram": round(float(macd_hist), 4) if self._is_valid_number(macd_hist) else 0,
             "bb_lower": round(float(bbl_f), 2) if self._is_valid_number(bbl) else 0,
             "bb_upper": round(float(bbu_f), 2) if self._is_valid_number(bbu) else 0,
-            "bb_percent": round(float(last.get("BBP_20_2.0", 0)), 4) if self._is_valid_number(last.get("BBP_20_2.0")) else 0,
+            "bb_percent": round(float(last.get("BBP_20_2.0_2.0", 0)), 4) if self._is_valid_number(last.get("BBP_20_2.0_2.0")) else 0,
             "atr_14": round(float(atr), 2) if self._is_valid_number(atr) else 0,
             "obv": int(last.get("OBV", 0) or 0),
             "volume_ratio": round(float(volume_ratio), 2) if volume_ratio else 0,
@@ -202,6 +212,14 @@ class SignalScorer:
     def check_exit(
         self, ticker: str, df: pd.DataFrame, active_signal: dict, days_held: int = 99
     ) -> SignalResult | None:
+        """Check if an active signal should be exited.
+
+        Exit priority (P0-5 — deterministic, not string matching):
+        1. Stop loss hit → CLOSED_SL (highest priority)
+        2. Take profit hit → CLOSED_TP
+        3. Hard technical exits (RSI overbought) → CLOSED_EXIT_SIGNAL
+        4. Soft technical exits (MACD cross, score drop) → CLOSED_EXIT_SIGNAL
+        """
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) >= 2 else last
 
@@ -211,39 +229,53 @@ class SignalScorer:
         macd_signal = float(last.get("MACDs_12_26_9", 0) or 0)
         prev_macd = float(prev.get("MACD_12_26_9", 0) or 0)
         prev_signal = float(prev.get("MACDs_12_26_9", 0) or 0)
-        bbu = float(last.get("BBU_20_2.0", 0) or 0)
+        bbu = float(last.get("BBU_20_2.0_2.0", 0) or 0)
 
         tp = float(active_signal.get("take_profit", 0) or 0)
         sl = float(active_signal.get("stop_loss", 0) or 0)
         entry = float(active_signal.get("entry_price", 0) or 0)
 
-        hard_reasons: list[str] = []
-        soft_reasons: list[str] = []
+        # Collect reasons with explicit priority tags
+        prioritized: list[tuple[ExitPriority, str]] = []
 
-        if rsi >= 70:
-            hard_reasons.append("RSI overbought")
-        if tp and close >= tp:
-            hard_reasons.append("Target price reached")
         if sl and close <= sl:
-            hard_reasons.append("Stop loss hit")
+            prioritized.append((ExitPriority.STOP_LOSS, "Stop loss hit"))
+        if tp and close >= tp:
+            prioritized.append((ExitPriority.TAKE_PROFIT, "Target price reached"))
+        if rsi >= 70:
+            prioritized.append((ExitPriority.HARD_EXIT, "RSI overbought"))
 
         if (macd < macd_signal) and (prev_macd >= prev_signal):
-            soft_reasons.append("MACD bearish crossover")
+            prioritized.append((ExitPriority.SOFT_EXIT, "MACD bearish crossover"))
         if bbu and close > bbu:
-            soft_reasons.append("Price above upper Bollinger Band")
+            prioritized.append((ExitPriority.SOFT_EXIT, "Price above upper Bollinger Band"))
 
         buy_result = self.score_buy(ticker, df, is_exit_check=True)
         if buy_result.score < SCORING.EXIT_SCORE_THRESHOLD:
-            soft_reasons.append("Setup score dropped below threshold")
+            prioritized.append((ExitPriority.SOFT_EXIT, "Setup score dropped below threshold"))
 
-        exit_reasons = hard_reasons or soft_reasons
-        if not exit_reasons:
+        if not prioritized:
             return None
 
-        if hard_reasons:
-            strength = SignalStrength.STRONG if len(hard_reasons) + len(soft_reasons) >= 2 else SignalStrength.NORMAL
+        # Sort by priority (lower = higher priority)
+        prioritized.sort(key=lambda x: x[0].value)
+        exit_reasons = [reason for _, reason in prioritized]
+        top_priority = prioritized[0][0]
+
+        # Determine exit_status from top priority reason
+        if top_priority == ExitPriority.STOP_LOSS:
+            exit_status = SignalStatus.CLOSED_SL
+        elif top_priority == ExitPriority.TAKE_PROFIT:
+            exit_status = SignalStatus.CLOSED_TP
         else:
-            strength = SignalStrength.STRONG if len(soft_reasons) >= 2 else SignalStrength.NORMAL
+            exit_status = SignalStatus.CLOSED_EXIT_SIGNAL
+
+        has_hard = any(p.value <= ExitPriority.HARD_EXIT.value for p, _ in prioritized)
+        total_triggers = len(prioritized)
+        if has_hard:
+            strength = SignalStrength.STRONG if total_triggers >= 2 else SignalStrength.NORMAL
+        else:
+            strength = SignalStrength.STRONG if total_triggers >= 2 else SignalStrength.NORMAL
 
         exit_pct = ((close - entry) / entry * 100) if entry else 0.0
         snapshot = {
@@ -262,6 +294,7 @@ class SignalScorer:
             indicator_snapshot=snapshot,
             signal_strength=strength,
             exit_reasons=exit_reasons,
+            exit_status=exit_status,
             reason=exit_reasons[0],
             risk_pct=round(abs(exit_pct), 2) if exit_pct < 0 else None,
             reward_pct=round(exit_pct, 2) if exit_pct >= 0 else None,

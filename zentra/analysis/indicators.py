@@ -23,7 +23,7 @@ class TechnicalIndicators:
         "MACD_12_26_9", "MACDh_12_26_9", "MACDs_12_26_9",
         "RSI_14",
         "STOCHRSIk_14_14_3_3", "STOCHRSId_14_14_3_3",
-        "BBL_20_2.0", "BBM_20_2.0", "BBU_20_2.0", "BBP_20_2.0",
+        "BBL_20_2.0_2.0", "BBM_20_2.0_2.0", "BBU_20_2.0_2.0", "BBP_20_2.0_2.0",
         "ATRr_14",
         "OBV",
         "VOL_SMA_20",
