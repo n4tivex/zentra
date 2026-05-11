@@ -25,80 +25,72 @@ class SignalScorer:
     def __init__(self) -> None:
         self.risk_calc = RiskCalculator()
 
-    def score_buy(self, ticker: str, df: pd.DataFrame, is_exit_check: bool = False) -> SignalResult:
-        """Score a ticker for BUY signal potential.
+    @staticmethod
+    def _is_valid_number(value: object) -> bool:
+        return value is not None and not pd.isna(value)
 
-        Uses the latest row of indicator data.
-        """
+    def score_buy(self, ticker: str, df: pd.DataFrame, is_exit_check: bool = False) -> SignalResult:
+        """Score a ticker for BUY signal potential."""
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) >= 2 else last
 
         scores: dict[str, int] = {}
-        details: dict[str, float] = {}
 
-        # --- EMA Trend (max 25) ---
-        ema20 = last.get("EMA_20", 0)
-        ema50 = last.get("EMA_50", 0)
-        if ema20 and ema50 and ema50 != 0:
+        ema20 = last.get("EMA_20")
+        ema50 = last.get("EMA_50")
+        if self._is_valid_number(ema20) and self._is_valid_number(ema50) and float(ema50) != 0:
+            ema20 = float(ema20)
+            ema50 = float(ema50)
             ema_gap_pct = (ema20 - ema50) / ema50
+            prev_ema20 = prev.get("EMA_20")
+            prev_ema50 = prev.get("EMA_50")
+
             if ema20 > ema50:
                 scores["ema"] = 25
             elif abs(ema_gap_pct) <= 0.02:
-                # Within 2% and possibly crossing
-                prev_ema20 = prev.get("EMA_20", 0)
-                prev_ema50 = prev.get("EMA_50", 0)
-                if prev_ema20 and prev_ema50 and prev_ema20 < prev_ema50:
-                    scores["ema"] = 15  # Crossing
+                if self._is_valid_number(prev_ema20) and self._is_valid_number(prev_ema50) and float(prev_ema20) < float(prev_ema50):
+                    scores["ema"] = 15
                 else:
-                    scores["ema"] = 15  # Close to crossing
+                    scores["ema"] = 15
             else:
-                # EMA20 < EMA50, check if gap is narrowing
-                prev_ema20 = prev.get("EMA_20", 0)
-                prev_ema50 = prev.get("EMA_50", 0)
-                if prev_ema20 and prev_ema50:
-                    prev_gap = abs(prev_ema20 - prev_ema50)
+                if self._is_valid_number(prev_ema20) and self._is_valid_number(prev_ema50):
+                    prev_gap = abs(float(prev_ema20) - float(prev_ema50))
                     curr_gap = abs(ema20 - ema50)
-                    if curr_gap < prev_gap:
-                        scores["ema"] = 5
-                    else:
-                        scores["ema"] = 0
+                    scores["ema"] = 5 if curr_gap < prev_gap else 0
                 else:
                     scores["ema"] = 0
         else:
             scores["ema"] = 0
 
-        # --- MACD (max 20) ---
-        macd = last.get("MACD_12_26_9", 0)
-        macd_signal = last.get("MACDs_12_26_9", 0)
-        macd_hist = last.get("MACDh_12_26_9", 0)
-        prev_macd = prev.get("MACD_12_26_9", 0)
-        prev_signal = prev.get("MACDs_12_26_9", 0)
+        macd = last.get("MACD_12_26_9")
+        macd_signal = last.get("MACDs_12_26_9")
+        macd_hist = last.get("MACDh_12_26_9")
+        prev_macd = prev.get("MACD_12_26_9")
+        prev_signal = prev.get("MACDs_12_26_9")
 
-        if macd and macd_signal:
-            # Crossover: MACD crosses above signal line today or yesterday
-            crossover_today = (macd > macd_signal) and (prev_macd <= prev_signal)
+        if self._is_valid_number(macd) and self._is_valid_number(macd_signal):
+            macd = float(macd)
+            macd_signal = float(macd_signal)
+            macd_hist_val = float(macd_hist) if self._is_valid_number(macd_hist) else 0.0
+            prev_macd_val = float(prev_macd) if self._is_valid_number(prev_macd) else 0.0
+            prev_signal_val = float(prev_signal) if self._is_valid_number(prev_signal) else 0.0
+            crossover_today = (macd > macd_signal) and (prev_macd_val <= prev_signal_val)
             if crossover_today:
                 scores["macd"] = 20
-            elif macd_hist and macd_hist > 0:
-                prev_hist = prev.get("MACDh_12_26_9", 0)
-                if prev_hist and macd_hist > prev_hist:
-                    scores["macd"] = 12  # Histogram positive and increasing
-                else:
-                    scores["macd"] = 8
-            elif macd_hist and macd_hist < 0:
-                prev_hist = prev.get("MACDh_12_26_9", 0)
-                if prev_hist and abs(macd_hist) < abs(prev_hist):
-                    scores["macd"] = 5  # Divergence decreasing
-                else:
-                    scores["macd"] = 0
+            elif macd_hist_val > 0:
+                prev_hist = float(prev.get("MACDh_12_26_9", 0) or 0)
+                scores["macd"] = 12 if macd_hist_val > prev_hist else 8
+            elif macd_hist_val < 0:
+                prev_hist = float(prev.get("MACDh_12_26_9", 0) or 0)
+                scores["macd"] = 5 if abs(macd_hist_val) < abs(prev_hist) else 0
             else:
                 scores["macd"] = 0
         else:
             scores["macd"] = 0
 
-        # --- RSI (max 20) ---
-        rsi = last.get("RSI_14", 50)
-        if rsi is not None and not pd.isna(rsi):
+        rsi = last.get("RSI_14")
+        if self._is_valid_number(rsi):
+            rsi = float(rsi)
             if 35 <= rsi <= 55:
                 scores["rsi"] = 20
             elif 55 < rsi <= 65:
@@ -108,34 +100,39 @@ class SignalScorer:
             elif rsi < 25:
                 scores["rsi"] = 3
             else:
-                scores["rsi"] = 0  # RSI > 65 (or > 70 overbought)
+                scores["rsi"] = 0
         else:
             scores["rsi"] = 0
+            rsi = 0.0
 
-        # --- Bollinger Bands (max 15) ---
-        close = last.get("close", 0)
-        bbl = last.get("BBL_20_2.0", 0)
-        bbm = last.get("BBM_20_2.0", 0)
-        bbu = last.get("BBU_20_2.0", 0)
-
-        if close and bbl and bbm and bbu:
-            if close <= bbl:
-                scores["bb"] = 15  # At or below lower band
-            elif close < bbm:
-                scores["bb"] = 10  # Lower half
-            elif close < bbu:
-                scores["bb"] = 5   # Upper half
+        close = last.get("close")
+        bbl = last.get("BBL_20_2.0")
+        bbm = last.get("BBM_20_2.0")
+        bbu = last.get("BBU_20_2.0")
+        if all(self._is_valid_number(v) for v in (close, bbl, bbm, bbu)):
+            close_f = float(close)
+            bbl_f = float(bbl)
+            bbm_f = float(bbm)
+            bbu_f = float(bbu)
+            if close_f <= bbl_f:
+                scores["bb"] = 15
+            elif close_f < bbm_f:
+                scores["bb"] = 10
+            elif close_f < bbu_f:
+                scores["bb"] = 5
             else:
-                scores["bb"] = 2   # Above upper band
+                scores["bb"] = 2
         else:
             scores["bb"] = 0
+            close_f = 0.0
+            bbl_f = bbm_f = bbu_f = 0.0
 
-        # --- Volume (max 15) ---
-        volume = last.get("volume", 0)
-        vol_sma = last.get("VOL_SMA_20", 0)
-
-        if volume and vol_sma and vol_sma > 0:
-            volume_ratio = volume / vol_sma
+        volume = last.get("volume")
+        vol_sma = last.get("VOL_SMA_20")
+        if self._is_valid_number(volume) and self._is_valid_number(vol_sma) and float(vol_sma) > 0:
+            volume_f = float(volume)
+            vol_sma_f = float(vol_sma)
+            volume_ratio = volume_f / vol_sma_f
             if volume_ratio > 1.5:
                 scores["volume"] = 15
             elif volume_ratio >= 1.0:
@@ -145,54 +142,43 @@ class SignalScorer:
         else:
             scores["volume"] = 0
             volume_ratio = 0.0
+            volume_f = 0.0
 
-        # --- ATR / Risk-Reward (max 5) ---
-        atr = last.get("ATRr_14", 0)
-        if close and atr and atr > 0:
-            risk_levels = self.risk_calc.calculate(close, atr)
-            if risk_levels.risk_reward_ratio >= SCORING.MIN_RR_RATIO:
-                scores["atr"] = 5
-            else:
-                scores["atr"] = 0
+        atr = last.get("ATRr_14")
+        risk_levels = None
+        if self._is_valid_number(close) and self._is_valid_number(atr) and float(atr) > 0:
+            close_val = float(close)
+            atr_val = float(atr)
+            risk_levels = self.risk_calc.calculate(close_val, atr_val)
+            scores["atr"] = 5 if risk_levels.risk_reward_ratio >= SCORING.MIN_RR_RATIO else 0
         else:
             scores["atr"] = 0
-            risk_levels = None
 
-        # --- Total score and confluence ---
         total_score = sum(scores.values())
+        if not is_exit_check and self._is_valid_number(close) and self._is_valid_number(ema20):
+            if float(close) < float(ema20):
+                total_score -= 30
 
-        # Trend filter: heavily penalize buying if price is below short-term trend (EMA20)
-        # Prevents buying falling knives in bear markets (skip if we're just checking exit score)
-        if not is_exit_check and close and ema20 and close < ema20:
-            total_score -= 30
+        confluence_count = sum(1 for key in ["ema", "macd", "rsi", "bb", "volume"] if scores.get(key, 0) > 0)
 
-        # Confluence: count of 5 main indicators that gave a positive score
-        main_indicators = ["ema", "macd", "rsi", "bb", "volume"]
-        confluence_count = sum(1 for k in main_indicators if scores.get(k, 0) > 0)
-
-        # Build indicator snapshot
         snapshot = {
-            "ema_20": round(float(ema20), 2) if ema20 else 0,
-            "ema_50": round(float(ema50), 2) if ema50 else 0,
-            "rsi_14": round(float(rsi), 2) if rsi and not pd.isna(rsi) else 0,
-            "macd": round(float(macd), 4) if macd else 0,
-            "macd_signal": round(float(macd_signal), 4) if macd_signal else 0,
-            "macd_histogram": round(float(macd_hist), 4) if macd_hist else 0,
-            "bb_lower": round(float(bbl), 2) if bbl else 0,
-            "bb_upper": round(float(bbu), 2) if bbu else 0,
-            "bb_percent": round(float(last.get("BBP_20_2.0", 0)), 4),
-            "atr_14": round(float(atr), 2) if atr else 0,
-            "obv": int(last.get("OBV", 0)),
+            "ema_20": round(float(ema20), 2) if self._is_valid_number(ema20) else 0,
+            "ema_50": round(float(ema50), 2) if self._is_valid_number(ema50) else 0,
+            "rsi_14": round(float(rsi), 2) if self._is_valid_number(rsi) else 0,
+            "macd": round(float(macd), 4) if self._is_valid_number(macd) else 0,
+            "macd_signal": round(float(macd_signal), 4) if self._is_valid_number(macd_signal) else 0,
+            "macd_histogram": round(float(macd_hist), 4) if self._is_valid_number(macd_hist) else 0,
+            "bb_lower": round(float(bbl_f), 2) if self._is_valid_number(bbl) else 0,
+            "bb_upper": round(float(bbu_f), 2) if self._is_valid_number(bbu) else 0,
+            "bb_percent": round(float(last.get("BBP_20_2.0", 0)), 4) if self._is_valid_number(last.get("BBP_20_2.0")) else 0,
+            "atr_14": round(float(atr), 2) if self._is_valid_number(atr) else 0,
+            "obv": int(last.get("OBV", 0) or 0),
             "volume_ratio": round(float(volume_ratio), 2) if volume_ratio else 0,
-            "close": round(float(close), 2) if close else 0,
-            "volume": int(volume) if volume else 0,
+            "close": round(float(close_f), 2) if self._is_valid_number(close) else 0,
+            "volume": int(volume_f) if volume_f else 0,
         }
 
-        # Classify signal
-        signal_type, signal_strength, reason = self._classify(
-            total_score, confluence_count, risk_levels
-        )
-
+        signal_type, signal_strength, reason = self._classify(total_score, confluence_count, risk_levels)
         result = SignalResult(
             ticker=ticker,
             signal_type=signal_type,
@@ -203,7 +189,6 @@ class SignalScorer:
             signal_strength=signal_strength,
         )
 
-        # Attach risk levels for BUY / WATCH signals
         if risk_levels and signal_type in (SignalType.BUY, SignalType.WATCH):
             result.entry_price = risk_levels.entry
             result.stop_loss = risk_levels.stop_loss
@@ -217,62 +202,50 @@ class SignalScorer:
     def check_exit(
         self, ticker: str, df: pd.DataFrame, active_signal: dict, days_held: int = 99
     ) -> SignalResult | None:
-        """Check if an active BUY signal should be exited.
-
-        Returns a SignalResult with EXIT type if exit conditions are met, else None.
-        Per PRD §7.3.
-
-        Hard exits (TP, SL, RSI overbought) fire immediately.
-        Soft exits (MACD, BB, score) require MIN_HOLD_DAYS grace period.
-        """
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) >= 2 else last
 
-        close = float(last.get("close", 0))
-        rsi = float(last.get("RSI_14", 50))
-        macd = float(last.get("MACD_12_26_9", 0))
-        macd_signal = float(last.get("MACDs_12_26_9", 0))
-        prev_macd = float(prev.get("MACD_12_26_9", 0))
-        prev_signal = float(prev.get("MACDs_12_26_9", 0))
-        bbu = float(last.get("BBU_20_2.0", 0))
+        close = float(last.get("close", 0) or 0)
+        rsi = float(last.get("RSI_14", 50) or 50)
+        macd = float(last.get("MACD_12_26_9", 0) or 0)
+        macd_signal = float(last.get("MACDs_12_26_9", 0) or 0)
+        prev_macd = float(prev.get("MACD_12_26_9", 0) or 0)
+        prev_signal = float(prev.get("MACDs_12_26_9", 0) or 0)
+        bbu = float(last.get("BBU_20_2.0", 0) or 0)
 
-        tp = active_signal.get("take_profit", 0)
-        sl = active_signal.get("stop_loss", 0)
-        entry = active_signal.get("entry_price", 0)
+        tp = float(active_signal.get("take_profit", 0) or 0)
+        sl = float(active_signal.get("stop_loss", 0) or 0)
+        entry = float(active_signal.get("entry_price", 0) or 0)
 
-        exit_reasons: list[str] = []
+        hard_reasons: list[str] = []
+        soft_reasons: list[str] = []
 
-        # Hard Exits (no grace period)
         if rsi >= 70:
-            exit_reasons.append("RSI overbought")
+            hard_reasons.append("RSI overbought")
         if tp and close >= tp:
-            exit_reasons.append("Target price reached")
+            hard_reasons.append("Target price reached")
         if sl and close <= sl:
-            exit_reasons.append("Stop loss hit")
+            hard_reasons.append("Stop loss hit")
 
-        # Soft Exits (no holding period, just check if technicals degrade)
-        macd_cross_down = (macd < macd_signal) and (prev_macd >= prev_signal)
-        if macd_cross_down:
-            exit_reasons.append("MACD bearish crossover")
-
+        if (macd < macd_signal) and (prev_macd >= prev_signal):
+            soft_reasons.append("MACD bearish crossover")
         if bbu and close > bbu:
-            exit_reasons.append("Price above upper Bollinger Band")
+            soft_reasons.append("Price above upper Bollinger Band")
 
         buy_result = self.score_buy(ticker, df, is_exit_check=True)
         if buy_result.score < SCORING.EXIT_SCORE_THRESHOLD:
-            exit_reasons.append("Setup score dropped below threshold")
+            soft_reasons.append("Setup score dropped below threshold")
 
+        exit_reasons = hard_reasons or soft_reasons
         if not exit_reasons:
             return None
 
-        # Score the current setup for the EXIT signal metadata
+        if hard_reasons:
+            strength = SignalStrength.STRONG if len(hard_reasons) + len(soft_reasons) >= 2 else SignalStrength.NORMAL
+        else:
+            strength = SignalStrength.STRONG if len(soft_reasons) >= 2 else SignalStrength.NORMAL
 
-        # Determine strength: 2+ reasons = STRONG EXIT
-        strength = SignalStrength.STRONG if len(exit_reasons) >= 2 else SignalStrength.NORMAL
-
-        # Calculate gain/loss
         exit_pct = ((close - entry) / entry * 100) if entry else 0.0
-
         snapshot = {
             "close": round(close, 2),
             "rsi_14": round(rsi, 2),
@@ -300,15 +273,12 @@ class SignalScorer:
         confluence_count: int,
         risk_levels: object | None,
     ) -> tuple[SignalType, SignalStrength, str]:
-        """Classify signal based on score and confluence per PRD §7.2."""
-        # Check RR ratio minimum
         if risk_levels is not None:
             rr = getattr(risk_levels, "risk_reward_ratio", 0)
             if rr < SCORING.MIN_RR_RATIO:
                 return SignalType.NO_SIGNAL, SignalStrength.NORMAL, "risk_reward_below_minimum"
 
         if score >= SCORING.BUY_THRESHOLD and confluence_count >= SCORING.MIN_CONFLUENCE:
-            # Determine BUY strength
             if score >= 85:
                 strength = SignalStrength.STRONG
             elif score >= 75:
