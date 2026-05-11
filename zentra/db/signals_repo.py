@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from supabase import Client
 
-from zentra.config import SCORING, SignalResult, SignalStatus
+from zentra.config import SCORING, SignalResult, SignalStatus, SignalType
 from zentra.exceptions import DatabaseError
 
 log = structlog.get_logger()
@@ -25,13 +25,14 @@ class SignalsRepo:
         self._table = "signals"
 
     def get_active_signal(self, ticker: str) -> dict | None:
-        """Get the active signal for a ticker, if any."""
         try:
             result = (
                 self._client.table(self._table)
                 .select("*")
                 .eq("ticker", ticker)
                 .eq("status", SignalStatus.ACTIVE.value)
+                .order("created_at", desc=True)
+                .limit(1)
                 .execute()
             )
             return result.data[0] if result.data else None
@@ -40,7 +41,17 @@ class SignalsRepo:
             raise DatabaseError(f"Failed to get active signal for {ticker}") from e
 
     def create_signal(self, result: SignalResult, run_id: str | None = None) -> dict:
-        """Insert a new signal record."""
+        """Insert a new signal record with active dedup protection."""
+
+        existing = self.get_active_signal(result.ticker)
+        if existing and result.signal_type in (SignalType.BUY, SignalType.WATCH):
+            log.warning(
+                "duplicate_active_signal_blocked",
+                ticker=result.ticker,
+                existing_id=existing.get("id"),
+            )
+            return existing
+
         record: dict[str, Any] = {
             "ticker": result.ticker,
             "signal_type": result.signal_type.value,
@@ -57,6 +68,7 @@ class SignalsRepo:
             "indicator_snapshot": result.indicator_snapshot,
             "status": SignalStatus.ACTIVE.value,
         }
+
         if run_id:
             record["run_id"] = run_id
 
@@ -75,7 +87,6 @@ class SignalsRepo:
         exit_price: int,
         entry_price: int,
     ) -> None:
-        """Close an active signal with exit details."""
         exit_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price else 0
 
         try:
@@ -91,8 +102,8 @@ class SignalsRepo:
             raise DatabaseError(f"Failed to close signal {signal_id}") from e
 
     def expire_old_signals(self) -> list[dict]:
-        """Find and expire signals older than SIGNAL_EXPIRY_DAYS."""
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=SCORING.SIGNAL_EXPIRY_DAYS)
+
         try:
             result = (
                 self._client.table(self._table)
@@ -101,8 +112,8 @@ class SignalsRepo:
                 .lt("created_at", cutoff.isoformat())
                 .execute()
             )
-            expired = result.data or []
 
+            expired = result.data or []
             for signal in expired:
                 self._client.table(self._table).update({
                     "status": SignalStatus.EXPIRED.value,
@@ -111,13 +122,13 @@ class SignalsRepo:
 
             if expired:
                 log.info("signals_expired", count=len(expired))
+
             return expired
         except Exception as e:
             log.error("db_expire_signals_failed", error=str(e))
-            raise DatabaseError(f"Failed to expire old signals") from e
+            raise DatabaseError("Failed to expire old signals") from e
 
     def get_all_closed_signals(self) -> list[dict]:
-        """Get all closed signals for performance tracking."""
         try:
             result = (
                 self._client.table(self._table)
@@ -135,10 +146,7 @@ class SignalsRepo:
             raise DatabaseError("Failed to get closed signals") from e
 
     def get_active_signals_count(self) -> int:
-        """Get the total number of currently active signals."""
         try:
-            # Supabase python client doesn't support count() elegantly with select without data, 
-            # so we just select id.
             result = (
                 self._client.table(self._table)
                 .select("id")
