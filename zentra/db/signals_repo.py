@@ -44,7 +44,7 @@ class SignalsRepo:
         """Insert a new signal record with active dedup protection."""
 
         existing = self.get_active_signal(result.ticker)
-        if existing and result.signal_type in (SignalType.BUY, SignalType.WATCH):
+        if existing and existing.get("signal_type") == "BUY":
             log.warning(
                 "duplicate_active_signal_blocked",
                 ticker=result.ticker,

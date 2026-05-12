@@ -371,8 +371,9 @@ class ZENTRAOrchestrator:
                 return {"ticker": ticker, "status": "skipped", "reason": "indicator_schema_violation"}
 
             # 9. Check for active signal (EXIT path)
+            # Only BUY signals are persisted — WATCH signals are info-only
             active = signals_repo.get_active_signal(ticker) if signals_repo else None
-            if active:
+            if active and active.get("signal_type") == "BUY":
                 return self._handle_exit(
                     ticker=ticker,
                     df_ind=df_ind,
@@ -515,11 +516,7 @@ class ZENTRAOrchestrator:
         for sig in watch_signals:
             watch_messages.append(format_watch_message(sig))
             signal_lines.append(f"👁 WATCH {sig.ticker} (skor: {sig.score})")
-            if signals_repo and run_id:
-                try:
-                    signals_repo.create_signal(sig, run_id=run_id)
-                except Exception as e:
-                    run_log.error("persist_watch_failed", phase="persist", ticker=sig.ticker, error=str(e))
+            # WATCH signals are NOT persisted — info-only for admin
 
         for exp in expired:
             exp_ticker = exp.get("ticker", "?")

@@ -1,11 +1,13 @@
 """Telegram MarkdownV2 formatting utilities.
 
 Per PRD §8.3: escape_markdown_v2, format_rupiah, message formatters.
+Production-grade signal formatting — no branding, no fluff.
 """
 
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from zentra.config import SignalResult, SignalStrength, TICKER_NAMES
 
@@ -29,11 +31,31 @@ def format_rupiah(amount: int | float) -> str:
     return f"Rp {formatted}"
 
 
+def _pct_str(value: float) -> str:
+    """Format a percentage value with sign."""
+    if value >= 0:
+        return f"+{value:.1f}%"
+    return f"{value:.1f}%"
+
+
+def _strength_label(strength: SignalStrength) -> str:
+    """Map signal strength to a concise label."""
+    if strength == SignalStrength.STRONG:
+        return "HIGH CONVICTION"
+    elif strength == SignalStrength.BORDERLINE:
+        return "BORDERLINE"
+    return ""
+
+
 def format_buy_message(result: SignalResult) -> str:
-    """Format a BUY signal as Telegram MarkdownV2 message per PRD §8.3."""
+    """Format a BUY signal as Telegram MarkdownV2 message.
+
+    Dynamic layout — sections adapt based on available data.
+    """
     ticker = result.ticker
     name = TICKER_NAMES.get(ticker, ticker)
     narrative = result.narrative or ""
+    snap = result.indicator_snapshot
 
     entry = format_rupiah(result.entry_price) if result.entry_price else "N/A"
     tp = format_rupiah(result.take_profit) if result.take_profit else "N/A"
@@ -42,10 +64,11 @@ def format_buy_message(result: SignalResult) -> str:
     risk_pct = result.risk_pct or 0
     rr = result.rr_ratio or 0
     score = result.score
+    confluence = result.confluence_count
 
-    # Estimate hold days from ATR
-    atr = result.indicator_snapshot.get("atr_14", 0)
-    close = result.indicator_snapshot.get("close", 0)
+    # Dynamic hold estimate from ATR
+    atr = snap.get("atr_14", 0)
+    close = snap.get("close", 0)
     if atr and close and result.take_profit:
         tp_distance = abs(result.take_profit - close)
         days_min = max(3, int(tp_distance / atr * 0.7))
@@ -57,74 +80,145 @@ def format_buy_message(result: SignalResult) -> str:
 
     esc = escape_markdown_v2
 
+    # Build header
+    strength_tag = _strength_label(result.signal_strength)
+    header = "🟢 *BUY SIGNAL*"
+    if strength_tag:
+        header += f" — {esc(strength_tag)}"
+
     lines = [
-        "🟢 *ZENTRA — BUY SIGNAL*",
-        f"*${esc(ticker)}* · {esc(name)}",
+        header,
+        f"*${esc(ticker)}* — {esc(name)}",
         "",
         esc(narrative),
         "",
-        f"📌 Entry sekitar *{esc(entry)}*",
-        f"🎯 Target *{esc(tp)}* \\(\\+{esc(f'{reward_pct:.1f}')}%\\)",
-        f"🛑 Stop loss *{esc(sl)}* \\(\\-{esc(f'{risk_pct:.1f}')}%\\)",
-        f"⏱ Estimasi hold *{days_min}–{days_max} hari*",
+        "─── *Rencana Trading* ───",
+        f"▸ Entry: *{esc(entry)}*",
+        f"▸ Target: *{esc(tp)}* \\(\\+{esc(f'{reward_pct:.1f}')}%\\)",
+        f"▸ Stop Loss: *{esc(sl)}* \\(\\-{esc(f'{risk_pct:.1f}')}%\\)",
+        f"▸ Risk/Reward: *1:{esc(f'{rr:.1f}')}*",
+        f"▸ Estimasi hold: *{days_min}–{days_max} hari*",
         "",
-        f"_Skor: {score}/100 · Risk/reward: 1:{esc(f'{rr:.1f}')}_",
     ]
+
+    # Dynamic indicator snapshot
+    rsi = snap.get("rsi_14", 0)
+    vol_ratio = snap.get("volume_ratio", 0)
+    bb_pct = snap.get("bb_percent", 0)
+
+    indicator_parts = []
+    if rsi:
+        indicator_parts.append(f"RSI {rsi:.0f}")
+    if vol_ratio:
+        indicator_parts.append(f"Vol {vol_ratio:.1f}x")
+    if bb_pct is not None and bb_pct > 0:
+        indicator_parts.append(f"BB% {bb_pct:.0%}")
+
+    if indicator_parts:
+        lines.append(f"_📊 {esc(' · '.join(indicator_parts))} · Confluence {confluence}/5 · Skor {score}/100_")
+    else:
+        lines.append(f"_📊 Confluence {confluence}/5 · Skor {score}/100_")
+
     return "\n".join(lines)
 
 
 def format_exit_message(result: SignalResult, active_signal: dict) -> str:
-    """Format an EXIT signal as Telegram MarkdownV2 message per PRD §8.3."""
+    """Format an EXIT signal as Telegram MarkdownV2 message.
+
+    Dynamic P&L calculation and reason formatting.
+    """
     ticker = result.ticker
+    name = TICKER_NAMES.get(ticker, ticker)
     narrative = result.narrative or ""
     close = result.indicator_snapshot.get("close", 0)
     entry = active_signal.get("entry_price", 0)
+    exit_reasons = result.exit_reasons or []
     primary_reason = result.reason or "Technical reversal"
 
     esc = escape_markdown_v2
 
-    # Gain/loss line
+    # Determine header icon based on outcome
     if entry and close:
         pct = (close - entry) / entry * 100
-        current = format_rupiah(close)
         if pct >= 0:
-            gain_line = f"📈 Profit: *\\+{esc(f'{pct:.1f}')}%* dari entry {esc(format_rupiah(entry))}"
+            emoji = "🟡"
+            pct_str = f"\\+{esc(f'{pct:.1f}')}%"
+            outcome = "PROFIT"
         else:
-            gain_line = f"📉 Loss: *{esc(f'{pct:.1f}')}%* dari entry {esc(format_rupiah(entry))}"
+            emoji = "🔴"
+            pct_str = f"{esc(f'{pct:.1f}')}%"
+            outcome = "LOSS"
     else:
-        current = "N/A"
-        gain_line = ""
+        emoji = "🔴"
+        pct = 0
+        pct_str = "N/A"
+        outcome = "EXIT"
 
-    strength_emoji = "🔴🔴" if result.signal_strength == SignalStrength.STRONG else "🔴"
+    # Determine exit type label
+    from zentra.config import SignalStatus
+    exit_type_map = {
+        SignalStatus.CLOSED_TP: "TARGET TERCAPAI ✅",
+        SignalStatus.CLOSED_SL: "STOP LOSS ❌",
+        SignalStatus.CLOSED_EXIT_SIGNAL: "SINYAL EXIT",
+    }
+    exit_label = exit_type_map.get(result.exit_status, "EXIT")
+
+    # Calculate days held
+    created_str = active_signal.get("created_at", "")
+    days_held = ""
+    if created_str:
+        try:
+            created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+            held = (datetime.now(tz=created.tzinfo) - created).days
+            days_held = f" · {held} hari"
+        except (ValueError, TypeError):
+            pass
 
     lines = [
-        f"{strength_emoji} *ZENTRA — EXIT SIGNAL*",
-        f"*${esc(ticker)}*",
+        f"{emoji} *EXIT — {esc(exit_label)}*",
+        f"*${esc(ticker)}* — {esc(name)}",
         "",
         esc(narrative),
         "",
-        f"📌 Exit di sekitar *{esc(format_rupiah(close) if close else 'N/A')}*",
-        gain_line,
+        "─── *Detail Exit* ───",
+        f"▸ Entry: *{esc(format_rupiah(entry))}*" if entry else None,
+        f"▸ Exit: *{esc(format_rupiah(close))}*" if close else None,
+        f"▸ P&L: *{pct_str}*{esc(days_held)}",
         "",
-        f"_Alasan utama: {esc(primary_reason)}_",
     ]
+
+    # Reasons list (dynamic)
+    if len(exit_reasons) > 1:
+        lines.append(f"_Alasan: {esc(', '.join(exit_reasons[:3]))}_")
+    elif exit_reasons:
+        lines.append(f"_Alasan: {esc(exit_reasons[0])}_")
+
     return "\n".join(line for line in lines if line is not None)
 
 
 def format_watch_message(result: SignalResult) -> str:
-    """Format a WATCH alert for admin per PRD §8.3."""
+    """Format a WATCH alert for admin — concise info-only."""
     ticker = result.ticker
-    reason = result.reason or "Approaching threshold"
+    name = TICKER_NAMES.get(ticker, ticker)
     score = result.score
+    confluence = result.confluence_count
+    snap = result.indicator_snapshot
     esc = escape_markdown_v2
 
+    # Compact indicator line
+    rsi = snap.get("rsi_14", 0)
+    vol_ratio = snap.get("volume_ratio", 0)
+    details = []
+    if rsi:
+        details.append(f"RSI {rsi:.0f}")
+    if vol_ratio:
+        details.append(f"Vol {vol_ratio:.1f}x")
+    detail_str = f" · {' · '.join(details)}" if details else ""
+
     lines = [
-        "👁 *ZENTRA — WATCHLIST UPDATE*",
-        f"*${esc(ticker)}* masuk pantauan",
-        "",
-        esc(reason),
-        "",
-        f"_Skor: {score}/100 — belum cukup kuat untuk entry_",
+        f"👁 *WATCHLIST* — ${esc(ticker)}",
+        f"{esc(name)} · Skor {score}/100 · Confluence {confluence}/5{esc(detail_str)}",
+        f"_Belum cukup kuat untuk entry — pantau perkembangan_",
     ]
     return "\n".join(lines)
 
@@ -137,20 +231,17 @@ def format_daily_summary(
     failed: int,
     signal_lines: list[str],
 ) -> str:
-    """Format daily summary message per PRD §9.3."""
+    """Format daily summary message."""
     esc = escape_markdown_v2
     signals = "\n".join(esc(s) for s in signal_lines) if signal_lines else "Tidak ada sinyal"
 
     lines = [
-        f"📊 *ZENTRA Daily Scan — {esc(date_str)}*",
+        f"📊 *Daily Scan — {esc(date_str)}*",
         "",
-        f"Scan selesai dalam {esc(f'{duration:.1f}')} detik",
         f"{total} ticker dianalisis · {success} berhasil · {failed} gagal",
+        f"Durasi: {esc(f'{duration:.1f}')} detik",
         "",
-        "Sinyal hari ini:",
         signals,
-        "",
-        "_ZENTRA v1\\.0 · IDX Swing Engine_",
     ]
     return "\n".join(lines)
 
@@ -165,20 +256,20 @@ def format_weekly_performance_summary(
     top_performers: list[dict],
     active_count: int,
 ) -> str:
-    """Format weekly performance summary message per PRD Phase 2."""
+    """Format weekly performance summary message."""
     esc = escape_markdown_v2
 
     lines = [
-        f"📈 *ZENTRA Weekly Performance*",
+        f"📈 *Weekly Performance*",
         f"\\({esc(date_str)}\\)",
         "",
-        f"*Win Rate Keseluruhan*: {esc(f'{win_rate_pct:.1f}')}% \\({wins} Win / {losses} Loss\\)",
-        f"*Rata\\-rata Return*: {esc(f'{avg_return_pct:+.2f}')}% per trade",
+        f"*Win Rate*: {esc(f'{win_rate_pct:.1f}')}% \\({wins}W / {losses}L\\)",
+        f"*Avg Return*: {esc(f'{avg_return_pct:+.2f}')}% per trade",
         "",
     ]
 
     if top_performers:
-        lines.append("*Top Performers \\(All\\-Time\\)*:")
+        lines.append("*Top Performers*:")
         for idx, p in enumerate(top_performers[:5], 1):
             t = p["ticker"]
             wr = p["win_rate_pct"]
@@ -186,8 +277,6 @@ def format_weekly_performance_summary(
             lines.append(f"{idx}\\. {esc(t)}: {esc(f'{wr:.0f}')}% WR \\({esc(f'{ret:+.1f}')}%\\)")
         lines.append("")
 
-    lines.append(f"*Sinyal yang Masih Active*: {active_count} Ticker")
-    lines.append("")
-    lines.append("_Laporan Mingguan Otomatis ZENTRA_")
+    lines.append(f"*Sinyal Aktif*: {active_count} ticker")
 
     return "\n".join(lines)

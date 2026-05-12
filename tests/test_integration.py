@@ -47,7 +47,7 @@ class TestDuplicateSignalDedup:
         mock_client = MagicMock()
         repo = SignalsRepo(mock_client)
 
-        existing = {"id": "abc-123", "ticker": "BBCA", "status": "ACTIVE"}
+        existing = {"id": "abc-123", "ticker": "BBCA", "status": "ACTIVE", "signal_type": "BUY"}
 
         # Mock get_active_signal to return an existing signal
         mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value \

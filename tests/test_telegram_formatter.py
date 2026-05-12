@@ -88,7 +88,7 @@ class TestFormatBuyMessage:
         assert "BBCA" in msg
         assert "Entry" in msg
         assert "Target" in msg
-        assert "Stop loss" in msg
+        assert "Stop Loss" in msg
         assert "Estimasi hold" in msg
         assert "Skor" in msg
         assert "78/100" in msg
@@ -122,15 +122,16 @@ class TestFormatExitMessage:
             confluence_count=2,
             signal_strength=SignalStrength.STRONG,
             reason="RSI overbought",
+            exit_reasons=["RSI overbought", "MACD bearish cross"],
             narrative="Exit narrative",
             indicator_snapshot={"close": 5000, "rsi_14": 72},
         )
         active = {"entry_price": 4500, "take_profit": 5500, "stop_loss": 4200}
         msg = format_exit_message(result, active)
 
-        assert "EXIT SIGNAL" in msg
+        assert "EXIT" in msg
         assert "BBRI" in msg
-        assert "Alasan utama" in msg
+        assert "Alasan" in msg
 
 
 class TestFormatWatchMessage:

@@ -188,14 +188,14 @@ GAIN_LINE_LOSS: list[str] = [
 # ---------------------------------------------------------------------------
 
 NO_SIGNAL_MESSAGES: list[str] = [
-    "📊 *ZENTRA Daily Scan*\n\nScan selesai \\— tidak ada sinyal yang memenuhi kriteria hari ini\\. Semua ticker di bawah ambang batas atau belum menunjukkan setup yang cukup kuat\\.\n\n_Kadang tidak ada sinyal itu juga sinyal\\._",
-    "📊 *ZENTRA Daily Scan*\n\nHari ini ZENTRA tidak menemukan setup yang cukup meyakinkan dari 20 ticker yang dipantau\\. Patience is a virtue\\.\n\n_No signal today — we wait for better setups\\._",
-    "📊 *ZENTRA Daily Scan*\n\nSemua ticker dicek, tapi belum ada yang memenuhi standar ZENTRA untuk sinyal hari ini\\. Better to miss a trade than force one\\.\n\n_Stand by mode\\._",
+    "📊 *Daily Scan*\n\nScan selesai \\— tidak ada sinyal yang memenuhi kriteria hari ini\\. Semua ticker di bawah ambang batas atau belum menunjukkan setup yang cukup kuat\\.\n\n_Kadang tidak ada sinyal itu juga sinyal\\._",
+    "📊 *Daily Scan*\n\nHari ini tidak ada setup yang cukup meyakinkan dari 20 ticker yang dipantau\\. Patience is a virtue\\.\n\n_No signal today \\— we wait for better setups\\._",
+    "📊 *Daily Scan*\n\nSemua ticker dicek, tapi belum ada yang memenuhi standar untuk sinyal hari ini\\. Better to miss a trade than force one\\.\n\n_Stand by mode\\._",
 ]
 
-MARKET_CLOSED_WEEKEND: str = "📊 *ZENTRA*: Pasar tutup hari ini \\(weekend\\)\\. Tidak ada scan\\."
+MARKET_CLOSED_WEEKEND: str = "📊 Pasar tutup hari ini \\(weekend\\)\\. Tidak ada scan\\."
 
-MARKET_CLOSED_HOLIDAY: str = "📊 *ZENTRA*: Pasar kemungkinan tutup hari ini \\(libur nasional\\)\\. Tidak ada data baru tersedia\\."
+MARKET_CLOSED_HOLIDAY: str = "📊 Pasar kemungkinan tutup hari ini \\(libur nasional\\)\\. Tidak ada data baru tersedia\\."
 
 EXPIRED_SIGNAL: list[str] = [
     "⏰ Sinyal {ticker} sudah aktif lebih dari {days} hari tanpa EXIT trigger. Sinyal otomatis di-expire. Cek harga terkini secara manual.",
