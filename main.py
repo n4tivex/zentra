@@ -16,9 +16,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ZENTRA Trading Signal Engine")
     parser.add_argument(
         "--mode",
-        choices=["morning", "closing", "manual"],
+        choices=["morning", "closing", "manual", "weekly"],
         default="morning",
-        help="Scan mode",
+        help="Scan mode (weekly = performance report only)",
     )
     parser.add_argument(
         "--ticker",
@@ -41,7 +41,12 @@ async def main() -> None:
     from zentra.orchestrator import ZENTRAOrchestrator
 
     orchestrator = ZENTRAOrchestrator(mode=args.mode, dry_run=args.dry_run)
-    success = await orchestrator.run(single_ticker=args.ticker)
+
+    if args.mode == "weekly":
+        success = await orchestrator.run_weekly_report()
+    else:
+        success = await orchestrator.run(single_ticker=args.ticker)
+
     sys.exit(0 if success else 1)
 
 

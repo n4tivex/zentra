@@ -135,7 +135,7 @@ class ScoringConfig:
     TP_ATR_MULTIPLIER: float = 2.5
     SIGNAL_EXPIRY_DAYS: int = 10
     EXIT_SCORE_THRESHOLD: int = 40
-    MIN_HOLD_DAYS_BEFORE_EXIT: int = 0
+    MIN_HOLD_DAYS_BEFORE_EXIT: int = 1
 
 
 @dataclass(frozen=True)

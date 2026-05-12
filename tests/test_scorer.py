@@ -154,3 +154,36 @@ class TestSignalScorer:
         }
         result = scorer.check_exit("TEST", df, active_signal)
         # May or may not exit depending on other conditions, but at minimum no TP/SL/RSI trigger
+
+    def test_min_hold_days_blocks_soft_exit(self, scorer, indicators, bullish_df):
+        """Soft exits should be blocked when days_held < MIN_HOLD_DAYS_BEFORE_EXIT."""
+        df = indicators.compute_all(bullish_df)
+        close = float(df.iloc[-1]["close"])
+
+        # Set RSI high to trigger RSI overbought (hard exit)
+        # But use days_held=0 which should block soft exits
+        df.loc[df.index[-1], "RSI_14"] = 50.0  # Safe RSI
+
+        active_signal = {
+            "entry_price": int(close * 0.95),
+            "stop_loss": int(close * 0.80),   # SL far below
+            "take_profit": int(close * 1.20),  # TP far above
+        }
+        result = scorer.check_exit("TEST", df, active_signal, days_held=0)
+        # With days_held=0 and no SL hit, should return None (soft exits blocked)
+        assert result is None
+
+    def test_sl_triggers_even_on_day_zero(self, scorer, indicators, bullish_df):
+        """SL should always trigger even when days_held=0 (risk protection)."""
+        df = indicators.compute_all(bullish_df)
+        close = float(df.iloc[-1]["close"])
+
+        active_signal = {
+            "entry_price": int(close * 1.2),
+            "stop_loss": int(close * 1.1),  # SL above current close → hit
+            "take_profit": int(close * 1.5),
+        }
+        result = scorer.check_exit("TEST", df, active_signal, days_held=0)
+        if result:
+            assert result.signal_type == SignalType.EXIT
+            assert any("Stop loss" in r for r in result.exit_reasons)

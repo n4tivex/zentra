@@ -59,9 +59,9 @@ class SignalScorer:
                 scores["ema"] = 25
             elif abs(ema_gap_pct) <= 0.02:
                 if self._is_valid_number(prev_ema20) and self._is_valid_number(prev_ema50) and float(prev_ema20) < float(prev_ema50):
-                    scores["ema"] = 15
+                    scores["ema"] = 20  # Golden cross happening
                 else:
-                    scores["ema"] = 15
+                    scores["ema"] = 15  # Consolidation near crossover
             else:
                 if self._is_valid_number(prev_ema20) and self._is_valid_number(prev_ema50):
                     prev_gap = abs(float(prev_ema20) - float(prev_ema50))
@@ -224,6 +224,16 @@ class SignalScorer:
         prev = df.iloc[-2] if len(df) >= 2 else last
 
         close = float(last.get("close", 0) or 0)
+        sl = float(active_signal.get("stop_loss", 0) or 0)
+
+        # Guard: skip soft/technical exits if held less than minimum days
+        # Exception: SL always triggers regardless of hold period (risk protection)
+        if days_held < SCORING.MIN_HOLD_DAYS_BEFORE_EXIT:
+            if sl and close <= sl:
+                # SL hit — still trigger even on day 0
+                pass
+            else:
+                return None
         rsi = float(last.get("RSI_14", 50) or 50)
         macd = float(last.get("MACD_12_26_9", 0) or 0)
         macd_signal = float(last.get("MACDs_12_26_9", 0) or 0)
@@ -273,7 +283,7 @@ class SignalScorer:
         has_hard = any(p.value <= ExitPriority.HARD_EXIT.value for p, _ in prioritized)
         total_triggers = len(prioritized)
         if has_hard:
-            strength = SignalStrength.STRONG if total_triggers >= 2 else SignalStrength.NORMAL
+            strength = SignalStrength.STRONG  # Hard exit always STRONG
         else:
             strength = SignalStrength.STRONG if total_triggers >= 2 else SignalStrength.NORMAL
 

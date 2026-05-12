@@ -50,6 +50,7 @@ from zentra.telegram.formatter import (
     format_exit_message,
     format_rupiah,
     format_watch_message,
+    format_weekly_performance_summary,
 )
 from zentra.telegram.sender import TelegramSender
 
@@ -125,7 +126,7 @@ class ZENTRAOrchestrator:
             if sample is not None and not sample.empty:
                 last_trade = pd.Timestamp(sample.index[-1]).date()
                 days_since = (today_jakarta() - last_trade).days
-                if days_since > 0 and self._mode == "closing":
+                if days_since > 0:
                     run_log.info("market_likely_holiday", phase="market_check", last_trade=str(last_trade))
                     if sender:
                         await sender.send_signal(MARKET_CLOSED_HOLIDAY)
@@ -154,7 +155,12 @@ class ZENTRAOrchestrator:
             if sender:
                 try:
                     await sender.send_admin_alert(
-                        escape_markdown_v2(f"⚠️ SCAN FAILED: Data fetch error — {e}")
+                        escape_markdown_v2(
+                            f"⚠️ SCAN FAILED\n"
+                            f"Mode: {self._mode}\n"
+                            f"Date: {self._today}\n"
+                            f"Error: {e}"
+                        )
                     )
                 except Exception:
                     run_log.warning("admin_alert_failed_on_fetch_error", phase="notify")
@@ -242,9 +248,23 @@ class ZENTRAOrchestrator:
                     ep = pos.get("entry_price", 0)
                     tp_val = pos.get("take_profit", 0)
                     sl_val = pos.get("stop_loss", 0)
+
+                    # Get current price from fetched data
+                    current_price = 0
+                    ticker_df = all_data.get(t)
+                    if ticker_df is not None and not ticker_df.empty:
+                        current_price = float(ticker_df.iloc[-1].get("close", 0) or 0)
+
+                    if current_price and ep:
+                        pnl_pct = (current_price - ep) / ep * 100
+                        pnl_str = f"\\+{esc(f'{pnl_pct:.1f}')}%" if pnl_pct >= 0 else f"{esc(f'{pnl_pct:.1f}')}%"
+                        price_info = f" → sekarang {esc(format_rupiah(current_price))} \\({pnl_str}\\)"
+                    else:
+                        price_info = ""
+
                     pos_lines.append(
-                        f"▸ ${esc(t)}: entry {esc(format_rupiah(ep))} → "
-                        f"TP {esc(format_rupiah(tp_val))} / SL {esc(format_rupiah(sl_val))}"
+                        f"▸ *${esc(t)}*: entry {esc(format_rupiah(ep))}{price_info}\n"
+                        f"  TP {esc(format_rupiah(tp_val))} / SL {esc(format_rupiah(sl_val))}"
                     )
                 positions_text = "\n".join(pos_lines)
                 messages.append(
@@ -282,6 +302,20 @@ class ZENTRAOrchestrator:
             results = await sender.send_batch(messages)
             telegram_sent = sum(results)
             telegram_failed_count = len(results) - telegram_sent
+
+            # Alert admin if too many tickers failed
+            if len(failed_tickers) >= 5:
+                try:
+                    await sender.send_admin_alert(
+                        escape_markdown_v2(
+                            f"⚠️ HIGH FAILURE RATE\n"
+                            f"Mode: {self._mode}\n"
+                            f"Failed: {len(failed_tickers)}/{total} tickers\n"
+                            f"Tickers: {', '.join(failed_tickers[:10])}"
+                        )
+                    )
+                except Exception:
+                    run_log.warning("admin_alert_failed_ticker_warning", phase="notify")
         else:
             telegram_sent = len(messages)
 
@@ -555,3 +589,84 @@ class ZENTRAOrchestrator:
             signal_lines.append(f"⏰ EXPIRED {exp_ticker}")
 
         return messages, signal_lines
+
+    async def run_weekly_report(self) -> bool:
+        """Generate and send weekly performance report."""
+        run_log = log.bind(mode="weekly", run_date=self._today)
+
+        if not self._dry_run:
+            try:
+                validate_env()
+            except ConfigurationError as e:
+                run_log.error("config_validation_failed", error=str(e))
+                return False
+
+        if not self._dry_run:
+            db = get_client()
+            signals_repo = SignalsRepo(db)
+            sender = TelegramSender(
+                bot_token=get_env("TELEGRAM_BOT_TOKEN"),
+                chat_id=get_env("TELEGRAM_CHAT_ID"),
+                admin_chat_id=get_env("TELEGRAM_ADMIN_CHAT_ID"),
+            )
+        else:
+            return True
+
+        try:
+            closed = signals_repo.get_all_closed_signals()
+            active_count = signals_repo.get_active_signals_count()
+        except Exception as e:
+            run_log.error("weekly_report_db_failed", error=str(e))
+            return False
+
+        # Filter to last 7 days
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=7)
+        recent = []
+        for sig in closed:
+            closed_at = sig.get("closed_at", "")
+            if closed_at:
+                try:
+                    dt = datetime.fromisoformat(closed_at.replace("Z", "+00:00"))
+                    if dt >= cutoff:
+                        recent.append(sig)
+                except (ValueError, TypeError):
+                    pass
+
+        if not recent:
+            run_log.info("weekly_report_no_closed_signals")
+            return True
+
+        # Calculate metrics
+        wins = sum(1 for s in recent if s.get("status") == SignalStatus.CLOSED_TP.value)
+        losses = sum(1 for s in recent if s.get("status") == SignalStatus.CLOSED_SL.value)
+        exits = sum(1 for s in recent if s.get("status") == SignalStatus.CLOSED_EXIT_SIGNAL.value)
+        total_closed = wins + losses + exits
+        win_rate = (wins / total_closed * 100) if total_closed else 0.0
+
+        returns = [s.get("exit_pct", 0) or 0 for s in recent]
+        avg_return = sum(returns) / len(returns) if returns else 0.0
+
+        # Top performers by return
+        sorted_signals = sorted(recent, key=lambda s: s.get("exit_pct", 0) or 0, reverse=True)
+        top_performers = []
+        for s in sorted_signals[:5]:
+            top_performers.append({
+                "ticker": s.get("ticker", "?"),
+                "win_rate_pct": 100.0 if (s.get("exit_pct", 0) or 0) > 0 else 0.0,
+                "avg_return_pct": s.get("exit_pct", 0) or 0,
+            })
+
+        message = format_weekly_performance_summary(
+            date_str=self._today,
+            total_closed=total_closed,
+            wins=wins,
+            losses=losses,
+            win_rate_pct=win_rate,
+            avg_return_pct=avg_return,
+            top_performers=top_performers,
+            active_count=active_count,
+        )
+
+        success = await sender.send_signal(message)
+        run_log.info("weekly_report_sent", success=success, total_closed=total_closed)
+        return success

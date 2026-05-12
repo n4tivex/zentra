@@ -15,6 +15,7 @@ from zentra.telegram.formatter import (
     format_exit_message,
     format_rupiah,
     format_watch_message,
+    format_weekly_performance_summary,
 )
 
 
@@ -163,3 +164,78 @@ class TestFormatDailySummary:
         assert "Daily Scan" in msg
         assert "2026" in msg
         assert "20 ticker" in msg
+
+
+class TestFormatBuyZone:
+    def test_buy_zone_present_when_atr_available(self):
+        result = SignalResult(
+            ticker="BBCA",
+            signal_type=SignalType.BUY,
+            score=78,
+            confluence_count=4,
+            entry_price=10000,
+            stop_loss=9200,
+            take_profit=12500,
+            risk_pct=8.0,
+            reward_pct=25.0,
+            rr_ratio=3.12,
+            signal_strength=SignalStrength.STRONG,
+            narrative="Test narrative",
+            indicator_snapshot={"atr_14": 200, "close": 10000},
+        )
+        msg = format_buy_message(result)
+        assert "Buy Zone" in msg
+
+    def test_no_buy_zone_when_atr_missing(self):
+        result = SignalResult(
+            ticker="BBCA",
+            signal_type=SignalType.BUY,
+            score=78,
+            confluence_count=4,
+            entry_price=10000,
+            stop_loss=9200,
+            take_profit=12500,
+            risk_pct=8.0,
+            reward_pct=25.0,
+            rr_ratio=3.12,
+            signal_strength=SignalStrength.STRONG,
+            narrative="Test narrative",
+            indicator_snapshot={"atr_14": 0, "close": 10000},
+        )
+        msg = format_buy_message(result)
+        assert "Buy Zone" not in msg
+
+
+class TestFormatWeeklyPerformance:
+    def test_weekly_summary_format(self):
+        msg = format_weekly_performance_summary(
+            date_str="2026-05-12",
+            total_closed=10,
+            wins=6,
+            losses=3,
+            win_rate_pct=60.0,
+            avg_return_pct=2.5,
+            top_performers=[
+                {"ticker": "BBCA", "win_rate_pct": 100.0, "avg_return_pct": 5.2},
+                {"ticker": "BMRI", "win_rate_pct": 75.0, "avg_return_pct": 3.1},
+            ],
+            active_count=2,
+        )
+        assert "Weekly Performance" in msg
+        assert "60" in msg  # win rate
+        assert "BBCA" in msg
+        assert "Sinyal Aktif" in msg
+
+    def test_weekly_summary_no_performers(self):
+        msg = format_weekly_performance_summary(
+            date_str="2026-05-12",
+            total_closed=0,
+            wins=0,
+            losses=0,
+            win_rate_pct=0.0,
+            avg_return_pct=0.0,
+            top_performers=[],
+            active_count=0,
+        )
+        assert "Weekly Performance" in msg
+        assert "Top Performers" not in msg
