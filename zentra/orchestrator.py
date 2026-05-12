@@ -154,7 +154,7 @@ class ZENTRAOrchestrator:
             if sender:
                 try:
                     await sender.send_admin_alert(
-                        escape_markdown_v2(f"⚠️ ZENTRA FAILED: Data fetch error — {e}")
+                        escape_markdown_v2(f"⚠️ SCAN FAILED: Data fetch error — {e}")
                     )
                 except Exception:
                     run_log.warning("admin_alert_failed_on_fetch_error", phase="notify")
@@ -214,7 +214,7 @@ class ZENTRAOrchestrator:
                 run_log.warning("expire_signals_failed", phase="lifecycle", error=str(e))
 
         # --- Phase: Build messages ---
-        messages, signal_lines, watch_messages = self._build_messages(
+        messages, signal_lines = self._build_messages(
             exit_signals=exit_signals,
             buy_signals=buy_signals,
             watch_signals=watch_signals,
@@ -225,7 +225,7 @@ class ZENTRAOrchestrator:
             run_log=run_log,
         )
 
-        if not messages and not watch_messages:
+        if not messages:
             # Check for active positions — avoid misleading "no signal" when positions exist
             active_positions = []
             if signals_repo:
@@ -278,17 +278,10 @@ class ZENTRAOrchestrator:
         telegram_failed_count = 0
 
         if sender and not self._dry_run:
-            # Main signal delivery
+            # Main channel delivery — all signals (BUY, EXIT, WATCH, expired)
             results = await sender.send_batch(messages)
             telegram_sent = sum(results)
             telegram_failed_count = len(results) - telegram_sent
-
-            # Admin alerts — isolated, failures don't affect main flow
-            for wm in watch_messages:
-                try:
-                    await sender.send_admin_alert(wm)
-                except Exception as e:
-                    run_log.warning("admin_watch_alert_failed", phase="notify", error=str(e))
         else:
             telegram_sent = len(messages)
 
@@ -506,11 +499,13 @@ class ZENTRAOrchestrator:
         narrative_gen: NarrativeGenerator,
         run_id: str | None,
         run_log,
-    ) -> tuple[list[str], list[str], list[str]]:
-        """Build all message lists for Telegram delivery."""
+    ) -> tuple[list[str], list[str]]:
+        """Build all message lists for Telegram delivery.
+
+        All signals go to main channel — admin only gets errors.
+        """
         messages: list[str] = []
         signal_lines: list[str] = []
-        watch_messages: list[str] = []
 
         for sig in exit_signals:
             active = signals_repo.get_active_signal(sig.ticker) if signals_repo else None
@@ -542,19 +537,21 @@ class ZENTRAOrchestrator:
                 except Exception as e:
                     run_log.error("persist_signal_failed", phase="persist", ticker=sig.ticker, error=str(e))
 
+        # WATCH signals — transparent to channel, NOT persisted to DB
         for sig in watch_signals:
-            watch_messages.append(format_watch_message(sig))
+            messages.append(format_watch_message(sig))
             signal_lines.append(f"👁 WATCH {sig.ticker} (skor: {sig.score})")
-            # WATCH signals are NOT persisted — info-only for admin
 
+        # Expired signals — transparent to channel
         for exp in expired:
             exp_ticker = exp.get("ticker", "?")
             days_active = (
                 datetime.now(tz=timezone.utc)
                 - datetime.fromisoformat(exp["created_at"].replace("Z", "+00:00"))
             ).days
-            watch_messages.append(
+            messages.append(
                 escape_markdown_v2(narrative_gen.generate_expired(exp_ticker, days_active))
             )
+            signal_lines.append(f"⏰ EXPIRED {exp_ticker}")
 
-        return messages, signal_lines, watch_messages
+        return messages, signal_lines
