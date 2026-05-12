@@ -86,6 +86,14 @@ def format_buy_message(result: SignalResult) -> str:
     if strength_tag:
         header += f" — {esc(strength_tag)}"
 
+    # Calculate buy zone based on ATR (volatility-adjusted entry window)
+    if atr and result.entry_price:
+        zone_low = int(result.entry_price - atr * 0.3)
+        zone_high = int(result.entry_price + atr * 0.5)
+        buy_zone_str = f"{esc(format_rupiah(zone_low))} – {esc(format_rupiah(zone_high))}"
+    else:
+        buy_zone_str = None
+
     lines = [
         header,
         f"*${esc(ticker)}* — {esc(name)}",
@@ -94,6 +102,7 @@ def format_buy_message(result: SignalResult) -> str:
         "",
         "─── *Rencana Trading* ───",
         f"▸ Entry: *{esc(entry)}*",
+        f"▸ Buy Zone: *{buy_zone_str}*" if buy_zone_str else None,
         f"▸ Target: *{esc(tp)}* \\(\\+{esc(f'{reward_pct:.1f}')}%\\)",
         f"▸ Stop Loss: *{esc(sl)}* \\(\\-{esc(f'{risk_pct:.1f}')}%\\)",
         f"▸ Risk/Reward: *1:{esc(f'{rr:.1f}')}*",
@@ -119,7 +128,7 @@ def format_buy_message(result: SignalResult) -> str:
     else:
         lines.append(f"_📊 Confluence {confluence}/5 · Skor {score}/100_")
 
-    return "\n".join(lines)
+    return "\n".join(line for line in lines if line is not None)
 
 
 def format_exit_message(result: SignalResult, active_signal: dict) -> str:

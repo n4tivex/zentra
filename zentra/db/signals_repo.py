@@ -40,6 +40,22 @@ class SignalsRepo:
             log.error("db_get_active_signal_failed", ticker=ticker, error=str(e))
             raise DatabaseError(f"Failed to get active signal for {ticker}") from e
 
+    def get_all_active_signals(self) -> list[dict]:
+        """Return all currently active BUY signals."""
+        try:
+            result = (
+                self._client.table(self._table)
+                .select("ticker, entry_price, take_profit, stop_loss, created_at")
+                .eq("status", SignalStatus.ACTIVE.value)
+                .eq("signal_type", "BUY")
+                .order("created_at", desc=True)
+                .execute()
+            )
+            return result.data or []
+        except Exception as e:
+            log.warning("db_get_all_active_failed", error=str(e))
+            return []
+
     def create_signal(self, result: SignalResult, run_id: str | None = None) -> dict:
         """Insert a new signal record with active dedup protection."""
 

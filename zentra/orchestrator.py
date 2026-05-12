@@ -48,6 +48,7 @@ from zentra.telegram.formatter import (
     format_buy_message,
     format_daily_summary,
     format_exit_message,
+    format_rupiah,
     format_watch_message,
 )
 from zentra.telegram.sender import TelegramSender
@@ -225,7 +226,35 @@ class ZENTRAOrchestrator:
         )
 
         if not messages and not watch_messages:
-            messages.append(random.Random(self._today).choice(NO_SIGNAL_MESSAGES))
+            # Check for active positions — avoid misleading "no signal" when positions exist
+            active_positions = []
+            if signals_repo:
+                try:
+                    active_positions = signals_repo.get_all_active_signals()
+                except Exception:
+                    pass
+
+            if active_positions:
+                esc = escape_markdown_v2
+                pos_lines = []
+                for pos in active_positions:
+                    t = pos.get("ticker", "?")
+                    ep = pos.get("entry_price", 0)
+                    tp_val = pos.get("take_profit", 0)
+                    sl_val = pos.get("stop_loss", 0)
+                    pos_lines.append(
+                        f"▸ ${esc(t)}: entry {esc(format_rupiah(ep))} → "
+                        f"TP {esc(format_rupiah(tp_val))} / SL {esc(format_rupiah(sl_val))}"
+                    )
+                positions_text = "\n".join(pos_lines)
+                messages.append(
+                    f"📊 *Daily Scan — {esc(self._today)}*\n\n"
+                    f"Tidak ada sinyal baru hari ini\\.\n\n"
+                    f"*Posisi aktif yang sedang dimonitor:*\n{positions_text}\n\n"
+                    f"_Exit akan otomatis dikirim jika TP/SL tercapai\\._"
+                )
+            else:
+                messages.append(random.Random(self._today).choice(NO_SIGNAL_MESSAGES))
 
         duration = time.time() - start_time
         total = len(tickers)
