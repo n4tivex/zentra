@@ -126,8 +126,13 @@ class ZENTRAOrchestrator:
             if sample is not None and not sample.empty:
                 last_trade = pd.Timestamp(sample.index[-1]).date()
                 days_since = (today_jakarta() - last_trade).days
-                if days_since > 0:
-                    run_log.info("market_likely_holiday", phase="market_check", last_trade=str(last_trade))
+
+                # Morning scan runs BEFORE market opens → last_trade = yesterday is normal (gap=1)
+                # Closing scan runs AFTER market closes → last_trade should be today (gap=0)
+                holiday_threshold = 1 if self._mode == "morning" else 0
+
+                if days_since > holiday_threshold:
+                    run_log.info("market_likely_holiday", phase="market_check", last_trade=str(last_trade), days_since=days_since)
                     if sender:
                         await sender.send_signal(MARKET_CLOSED_HOLIDAY)
                     if run_logs_repo and run_id:
