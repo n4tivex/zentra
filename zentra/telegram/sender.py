@@ -44,12 +44,14 @@ class TelegramSender:
                 await asyncio.sleep(self.RATE_LIMIT_DELAY)
         return results
 
-    async def send_admin_alert(self, message: str) -> None:
+    async def send_admin_alert(self, message: str) -> bool:
         """Send alert to admin chat. Best-effort, does not raise."""
         try:
             await self._send_with_retry(self._admin_chat_id, message)
+            return True
         except Exception as e:
             log.error("admin_alert_failed", error=str(e))
+            return False
 
     @retry(
         stop=stop_after_attempt(3),

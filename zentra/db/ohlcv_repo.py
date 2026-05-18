@@ -12,7 +12,7 @@ import structlog
 from supabase import Client
 
 from zentra.config import DATA
-from zentra.exceptions import DatabaseError
+from zentra.exceptions import DataIntegrityError, DatabaseDeleteError, DatabaseError, DatabaseUpdateError
 from zentra.runtime import today_jakarta
 
 log = structlog.get_logger()
@@ -42,7 +42,7 @@ class OHLCVRepo:
             df = pd.DataFrame(result.data)
             required = {"trade_date", "open", "high", "low", "close", "volume"}
             if not required.issubset(set(df.columns)):
-                return None
+                raise DataIntegrityError(f"Cache payload for {ticker} is missing required columns")
 
             df["trade_date"] = pd.to_datetime(df["trade_date"])
             df = df.set_index("trade_date").sort_index()
@@ -62,8 +62,11 @@ class OHLCVRepo:
             log.info("cache_hit", ticker=ticker, rows=len(df))
             return df
         except Exception as e:
-            log.warning("cache_check_failed", ticker=ticker, error=str(e))
-            return None
+            if isinstance(e, DataIntegrityError):
+                log.error("cache_payload_invalid", ticker=ticker, error=str(e))
+                raise
+            log.error("cache_check_failed", ticker=ticker, error=str(e))
+            raise DatabaseError(f"Failed to read OHLCV cache for {ticker}") from e
 
     def upsert_batch(self, ticker: str, df: pd.DataFrame) -> None:
         if df.empty:
@@ -89,7 +92,7 @@ class OHLCVRepo:
             log.info("ohlcv_cached", ticker=ticker, rows=len(rows))
         except Exception as e:
             log.error("ohlcv_cache_failed", ticker=ticker, error=str(e))
-            raise DatabaseError(f"Failed to cache OHLCV for {ticker}") from e
+            raise DatabaseUpdateError(f"Failed to cache OHLCV for {ticker}") from e
 
     def cleanup_old_data(self, retention_days: int = DATA.OHLCV_RETENTION_DAYS) -> int:
         cutoff = (today_jakarta() - timedelta(days=retention_days)).strftime("%Y-%m-%d")
@@ -113,4 +116,4 @@ class OHLCVRepo:
             return rows_to_delete
         except Exception as e:
             log.error("ohlcv_cleanup_failed", error=str(e))
-            raise DatabaseError("Failed to cleanup old OHLCV data") from e
+            raise DatabaseDeleteError("Failed to cleanup old OHLCV data") from e

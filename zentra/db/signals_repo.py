@@ -12,7 +12,13 @@ import structlog
 from supabase import Client
 
 from zentra.config import SCORING, VALID_TRANSITIONS, SignalResult, SignalStatus, SignalType
-from zentra.exceptions import DatabaseError
+from zentra.db.utils import looks_like_unique_conflict
+from zentra.exceptions import (
+    DatabaseConflictError,
+    DatabaseError,
+    DatabaseInsertError,
+    DatabaseUpdateError,
+)
 
 log = structlog.get_logger()
 
@@ -53,8 +59,8 @@ class SignalsRepo:
             )
             return result.data or []
         except Exception as e:
-            log.warning("db_get_all_active_failed", error=str(e))
-            return []
+            log.error("db_get_all_active_failed", error=str(e))
+            raise DatabaseError("Failed to get active signals") from e
 
     def create_signal(self, result: SignalResult, run_id: str | None = None) -> dict:
         """Insert a new signal record with active dedup protection."""
@@ -93,8 +99,21 @@ class SignalsRepo:
             log.info("signal_created", ticker=result.ticker, type=result.signal_type.value)
             return resp.data[0] if resp.data else record
         except Exception as e:
+            if looks_like_unique_conflict(e):
+                existing_after_conflict = self.get_active_signal(result.ticker)
+                if existing_after_conflict and existing_after_conflict.get("signal_type") == "BUY":
+                    log.warning(
+                        "signal_dedup_conflict",
+                        ticker=result.ticker,
+                        existing_id=existing_after_conflict.get("id"),
+                    )
+                    return existing_after_conflict
+                log.error("db_create_signal_conflict_unresolved", ticker=result.ticker, error=str(e))
+                raise DatabaseConflictError(
+                    f"Signal insert conflict for {result.ticker}, but no active BUY was found"
+                ) from e
             log.error("db_create_signal_failed", ticker=result.ticker, error=str(e))
-            raise DatabaseError(f"Failed to create signal for {result.ticker}") from e
+            raise DatabaseInsertError(f"Failed to create signal for {result.ticker}") from e
 
     @staticmethod
     def _validate_transition(current: SignalStatus, target: SignalStatus) -> None:
@@ -119,18 +138,33 @@ class SignalsRepo:
         exit_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price else 0
 
         try:
-            self._client.table(self._table).update({
+            resp = self._client.table(self._table).update({
                 "status": status.value,
                 "exit_price": exit_price,
                 "exit_pct": round(exit_pct, 2),
                 "closed_at": datetime.now(tz=timezone.utc).isoformat(),
             }).eq("id", signal_id).eq("status", SignalStatus.ACTIVE.value).execute()
+
+            if isinstance(resp.data, list) and len(resp.data) == 0:
+                existing = self._get_signal_by_id(signal_id)
+                existing_status = existing.get("status") if existing else None
+                if existing_status == status.value:
+                    log.info("signal_close_idempotent", signal_id=signal_id, status=status.value)
+                    return
+                log.warning(
+                    "signal_close_no_rows",
+                    signal_id=signal_id,
+                    requested_status=status.value,
+                    existing_status=existing_status,
+                )
+                raise DatabaseUpdateError(f"Signal {signal_id} was not active when close was requested")
+
             log.info("signal_closed", signal_id=signal_id, status=status.value)
         except DatabaseError:
             raise
         except Exception as e:
             log.error("db_close_signal_failed", signal_id=signal_id, error=str(e))
-            raise DatabaseError(f"Failed to close signal {signal_id}") from e
+            raise DatabaseUpdateError(f"Failed to close signal {signal_id}") from e
 
     def expire_old_signals(self) -> list[dict]:
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=SCORING.SIGNAL_EXPIRY_DAYS)
@@ -148,10 +182,12 @@ class SignalsRepo:
             for signal in expired:
                 # Validate transition
                 self._validate_transition(SignalStatus.ACTIVE, SignalStatus.EXPIRED)
-                self._client.table(self._table).update({
+                resp = self._client.table(self._table).update({
                     "status": SignalStatus.EXPIRED.value,
                     "closed_at": datetime.now(tz=timezone.utc).isoformat(),
                 }).eq("id", signal["id"]).eq("status", SignalStatus.ACTIVE.value).execute()
+                if isinstance(resp.data, list) and len(resp.data) == 0:
+                    log.info("signal_expire_idempotent", signal_id=signal["id"])
 
             if expired:
                 log.info("signals_expired", count=len(expired))
@@ -161,7 +197,21 @@ class SignalsRepo:
             raise
         except Exception as e:
             log.error("db_expire_signals_failed", error=str(e))
-            raise DatabaseError("Failed to expire old signals") from e
+            raise DatabaseUpdateError("Failed to expire old signals") from e
+
+    def _get_signal_by_id(self, signal_id: str) -> dict | None:
+        try:
+            result = (
+                self._client.table(self._table)
+                .select("*")
+                .eq("id", signal_id)
+                .limit(1)
+                .execute()
+            )
+            return result.data[0] if result.data else None
+        except Exception as e:
+            log.error("db_get_signal_by_id_failed", signal_id=signal_id, error=str(e))
+            raise DatabaseError(f"Failed to get signal {signal_id}") from e
 
     def get_all_closed_signals(self) -> list[dict]:
         try:
@@ -191,4 +241,4 @@ class SignalsRepo:
             return len(result.data) if result.data else 0
         except Exception as e:
             log.error("db_get_active_count_failed", error=str(e))
-            return 0
+            raise DatabaseError("Failed to count active signals") from e

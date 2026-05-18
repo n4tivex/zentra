@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "market": "IDX",
+  "timezone": "Asia/Jakarta",
+  "updated_at": "2026-05-18T00:00:00+07:00",
+  "source_reference": "Versioned IDX market-closure source maintained with production runbook",
+  "closures": [
+    {
+      "date": "2026-01-01",
+      "closure_type": "official_holiday",
+      "description": "New Year holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-01-16",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-02-16",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-02-17",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-03-18",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-03-19",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-03-20",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-03-23",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-03-24",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-04-03",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-05-01",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-05-14",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-05-15",
+      "closure_type": "official_holiday",
+      "description": "Cuti bersama market closure",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-05-27",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-05-28",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-06-01",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-06-16",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-08-17",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-08-25",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-12-24",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-12-25",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2026-12-31",
+      "closure_type": "official_holiday",
+      "description": "Market holiday",
+      "source_reference": "IDX published 2026 market holiday schedule",
+      "effective_year": 2026,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    },
+    {
+      "date": "2027-01-01",
+      "closure_type": "official_holiday",
+      "description": "New Year holiday",
+      "source_reference": "Versioned rollover seed pending IDX full-year publication",
+      "effective_year": 2027,
+      "updated_at": "2026-05-18T00:00:00+07:00"
+    }
+  ]
+}

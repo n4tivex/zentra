@@ -5,7 +5,7 @@ All validation rules per PRD §5.2.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date
 
 import pandas as pd
 import structlog
@@ -19,7 +19,14 @@ log = structlog.get_logger()
 class DataValidator:
     """Validates OHLCV DataFrames for completeness and integrity."""
 
-    def validate(self, ticker: str, df: pd.DataFrame) -> ValidationResult:
+    def validate(
+        self,
+        ticker: str,
+        df: pd.DataFrame,
+        *,
+        expected_last_date: date | None = None,
+        stale_as_error: bool = True,
+    ) -> ValidationResult:
         warnings: list[str] = []
         errors: list[str] = []
         ticker_log = log.bind(ticker=ticker)
@@ -79,13 +86,22 @@ class DataValidator:
         days_old = (today - last_date).days
 
         if days_old > DATA.STALE_DATA_THRESHOLD_DAYS:
-            errors.append(
+            stale_message = (
                 f"Data is {days_old} days old (threshold: {DATA.STALE_DATA_THRESHOLD_DAYS})"
             )
+            if stale_as_error:
+                errors.append(stale_message)
+            else:
+                warnings.append(stale_message)
 
         if days_old > 1:
             warnings.append(
                 f"Data may be stale: last date is {last_date} ({days_old} days ago)"
+            )
+
+        if expected_last_date is not None and last_date < expected_last_date:
+            errors.append(
+                f"Data is behind expected trading day: last={last_date}, expected={expected_last_date}"
             )
 
         dates = pd.Series(df_clean.index)

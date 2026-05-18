@@ -63,3 +63,16 @@ def validate_indicator_schema(df: pd.DataFrame, ticker: str = "") -> None:
         raise DataIntegrityError(
             f"Indicator schema violation for {ticker}: index must be DatetimeIndex"
         )
+
+    if df.empty:
+        raise DataIntegrityError(f"Indicator schema violation for {ticker}: DataFrame is empty")
+
+    invalid_last = [
+        c
+        for c in INDICATOR_REQUIRED_COLUMNS
+        if pd.isna(df.iloc[-1][c])
+    ]
+    if invalid_last:
+        raise DataIntegrityError(
+            f"Indicator schema violation for {ticker}: invalid last-row values {invalid_last}"
+        )

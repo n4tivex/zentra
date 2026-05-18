@@ -37,6 +37,32 @@ class CalculationError(ZENTRABaseError):
 class DatabaseError(ZENTRABaseError):
     """Error saat operasi Supabase."""
 
+    category = "database"
+
+
+class DatabaseInsertError(DatabaseError):
+    """Supabase insert failure."""
+
+    category = "db_insert"
+
+
+class DatabaseUpdateError(DatabaseError):
+    """Supabase update failure."""
+
+    category = "db_update"
+
+
+class DatabaseDeleteError(DatabaseError):
+    """Supabase delete failure."""
+
+    category = "db_delete"
+
+
+class DatabaseConflictError(DatabaseError):
+    """Supabase uniqueness or idempotency conflict."""
+
+    category = "db_conflict"
+
 
 class TelegramError(ZENTRABaseError):
     """Error saat kirim pesan ke Telegram."""

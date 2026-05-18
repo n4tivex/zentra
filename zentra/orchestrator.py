@@ -8,12 +8,12 @@ P2-19 (structured logging), P2-21 (enum harmonization).
 from __future__ import annotations
 
 import random
+import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import structlog
-import yfinance as yf
 
 from zentra.analysis.indicators import TechnicalIndicators
 from zentra.analysis.scorer import SignalScorer
@@ -26,11 +26,12 @@ from zentra.config import (
     get_env,
     validate_env,
 )
-from zentra.data.fetcher import MarketDataFetcher
+from zentra.data.fetcher import FetchCoverage, MarketDataFetcher
 from zentra.data.schema import validate_indicator_schema, validate_ohlcv_schema
 from zentra.data.validator import DataValidator
 from zentra.db.client import get_client
 from zentra.db.ohlcv_repo import OHLCVRepo
+from zentra.db.run_locks_repo import RunLocksRepo
 from zentra.db.run_logs_repo import RunLogsRepo
 from zentra.db.signals_repo import SignalsRepo
 from zentra.exceptions import (
@@ -42,7 +43,8 @@ from zentra.exceptions import (
 )
 from zentra.narrative.blocks import MARKET_CLOSED_HOLIDAY, MARKET_CLOSED_WEEKEND, NO_SIGNAL_MESSAGES
 from zentra.narrative.generator import NarrativeGenerator
-from zentra.runtime import is_weekend_jakarta, now_jakarta, today_jakarta
+from zentra.market_calendar import MarketCalendar
+from zentra.runtime import today_jakarta
 from zentra.telegram.formatter import (
     escape_markdown_v2,
     format_buy_message,
@@ -62,6 +64,101 @@ class ZENTRAOrchestrator:
         self._mode = mode
         self._dry_run = dry_run
         self._today = today_jakarta().strftime("%Y-%m-%d")
+        self._run_slot = os.getenv("ZENTRA_SCHEDULE_SLOT", mode)
+        self._market_calendar = MarketCalendar.from_env()
+
+    async def _send_admin_alert(self, sender: TelegramSender | None, run_log, message: str, event: str) -> bool:
+        if not sender:
+            return False
+        try:
+            sent = await sender.send_admin_alert(escape_markdown_v2(message))
+            if not sent:
+                run_log.warning(event, phase="notify")
+            return bool(sent)
+        except Exception as e:
+            run_log.warning(event, phase="notify", error=str(e))
+            return False
+
+    async def _update_run_log(self, run_logs_repo, run_id: str | None, run_log, sender, **kwargs) -> bool:
+        if not run_logs_repo or not run_id:
+            return True
+        try:
+            run_logs_repo.update_run(run_id, **kwargs)
+            return True
+        except Exception as e:
+            run_log.error("run_log_update_failed", phase="persist", error=str(e))
+            await self._send_admin_alert(
+                sender,
+                run_log,
+                "\n".join(
+                    [
+                        "RUN LOG UPDATE FAILED",
+                        f"Run ID: {run_id}",
+                        f"Mode: {self._mode}",
+                        f"Date: {self._today}",
+                        "Category: db_update",
+                        f"Error: {e}",
+                    ]
+                ),
+                "admin_alert_failed_on_run_log_update",
+            )
+            return False
+
+    def _release_run_lock(self, locks_repo, run_lock: dict | None, run_log) -> bool:
+        if not locks_repo or not run_lock:
+            return True
+        try:
+            locks_repo.release(run_lock)
+            return True
+        except Exception as e:
+            run_log.error("run_lock_release_failed", phase="lock", error=str(e))
+            return False
+
+    def _latest_trade_date(self, all_data: dict[str, pd.DataFrame]) -> date | None:
+        latest_trade_date = None
+        for df in all_data.values():
+            if df is None or df.empty:
+                continue
+            candidate = pd.Timestamp(df.index[-1]).date()
+            if latest_trade_date is None or candidate > latest_trade_date:
+                latest_trade_date = candidate
+        return latest_trade_date
+
+    def _data_readiness_status(
+        self,
+        all_data: dict[str, pd.DataFrame],
+    ) -> tuple[str, date | None, date]:
+        expected_trade_date = self._market_calendar.expected_last_trade_day(
+            today_jakarta(),
+            mode=self._mode,
+        )
+        latest_trade_date = self._latest_trade_date(all_data)
+        if latest_trade_date is None:
+            return "provider_stale", None, expected_trade_date
+        if latest_trade_date >= expected_trade_date:
+            return "ready", latest_trade_date, expected_trade_date
+        if self._mode == "closing" and latest_trade_date == self._market_calendar.previous_trading_day(expected_trade_date):
+            return "market_data_pending", latest_trade_date, expected_trade_date
+        return "provider_stale", latest_trade_date, expected_trade_date
+
+    @staticmethod
+    def _classify_run_status(
+        *,
+        failed_count: int,
+        coverage: FetchCoverage,
+        telegram_failed: int,
+        persistence_failures: list[str],
+    ) -> str:
+        if (
+            failed_count == 0
+            and not coverage.is_partial
+            and telegram_failed == 0
+            and not persistence_failures
+        ):
+            return RunStatus.SUCCESS.value
+        if failed_count > 15 or coverage.coverage_ratio < 0.8:
+            return RunStatus.FAILED.value
+        return RunStatus.PARTIAL.value
 
     async def run(self, single_ticker: str | None = None) -> bool:
         start_time = time.time()
@@ -83,6 +180,7 @@ class ZENTRAOrchestrator:
             signals_repo = SignalsRepo(db)
             ohlcv_repo = OHLCVRepo(db)
             run_logs_repo = RunLogsRepo(db)
+            locks_repo = RunLocksRepo(db)
             sender = TelegramSender(
                 bot_token=get_env("TELEGRAM_BOT_TOKEN"),
                 chat_id=get_env("TELEGRAM_CHAT_ID"),
@@ -92,84 +190,281 @@ class ZENTRAOrchestrator:
             signals_repo = None
             ohlcv_repo = None
             run_logs_repo = None
+            locks_repo = None
             sender = None
 
         run_id = None
+        run_lock = None
         if run_logs_repo:
             try:
-                run_id = run_logs_repo.create_run(self._mode)
+                run_id = run_logs_repo.create_run(self._mode, run_slot=self._run_slot)
                 run_log = run_log.bind(run_id=run_id)
             except Exception as e:
                 run_log.error("run_log_creation_failed", phase="init", error=str(e))
+                await self._send_admin_alert(
+                    sender,
+                    run_log,
+                    "\n".join(
+                        [
+                            "SCAN FAILED",
+                            f"Mode: {self._mode}",
+                            f"Date: {self._today}",
+                            "Category: db_insert",
+                            f"Error: {e}",
+                        ]
+                    ),
+                    "admin_alert_failed_on_run_log_create",
+                )
+                return False
+
+        if locks_repo:
+            try:
+                run_lock = locks_repo.acquire(
+                    mode=self._mode,
+                    run_date=self._today,
+                    slot=self._run_slot,
+                    run_id=run_id,
+                )
+            except Exception as e:
+                run_log.error("run_lock_acquire_failed", phase="lock", error=str(e))
+                await self._send_admin_alert(
+                    sender,
+                    run_log,
+                    "\n".join(
+                        [
+                            "SCAN FAILED",
+                            f"Run ID: {run_id}",
+                            f"Mode: {self._mode}",
+                            f"Date: {self._today}",
+                            "Category: db_insert",
+                            f"Error: {e}",
+                        ]
+                    ),
+                    "admin_alert_failed_on_run_lock",
+                )
+                await self._update_run_log(
+                    run_logs_repo,
+                    run_id,
+                    run_log,
+                    sender,
+                    status=RunStatus.FAILED.value,
+                    duration_seconds=time.time() - start_time,
+                    failure_category="db_insert",
+                    error_message=str(e),
+                )
+                return False
+            if run_lock is None:
+                run_log.warning("duplicate_run_blocked", phase="lock", run_slot=self._run_slot)
+                await self._send_admin_alert(
+                    sender,
+                    run_log,
+                    "\n".join(
+                        [
+                            "DUPLICATE RUN BLOCKED",
+                            f"Run ID: {run_id}",
+                            f"Mode: {self._mode}",
+                            f"Date: {self._today}",
+                            f"Slot: {self._run_slot}",
+                        ]
+                    ),
+                    "admin_alert_failed_on_duplicate_run",
+                )
+                updated = await self._update_run_log(
+                    run_logs_repo,
+                    run_id,
+                    run_log,
+                    sender,
+                    status=RunStatus.SUCCESS.value,
+                    duration_seconds=time.time() - start_time,
+                    failure_category="duplicate_run_lock",
+                    error_message=f"Duplicate run blocked for slot {self._run_slot}",
+                )
+                return updated
 
         # --- Phase: Market status check ---
-        if is_weekend_jakarta():
+        market_status = self._market_calendar.closure_reason(today_jakarta())
+        if market_status == "weekend":
             run_log.info("market_closed_weekend", phase="market_check")
             if sender:
                 await sender.send_signal(MARKET_CLOSED_WEEKEND)
-            if run_logs_repo and run_id:
-                run_logs_repo.update_run(run_id, status=RunStatus.SUCCESS.value, duration_seconds=0)
-            return True
-
-        jakarta_now = now_jakarta()
-        try:
-            end = jakarta_now + timedelta(days=1)
-            start = jakarta_now - timedelta(days=5)
-            sample = yf.download(
-                "BBCA.JK",
-                start=start.strftime("%Y-%m-%d"),
-                end=end.strftime("%Y-%m-%d"),
-                progress=False,
-                auto_adjust=True,
+            updated = await self._update_run_log(
+                run_logs_repo,
+                run_id,
+                run_log,
+                sender,
+                status=RunStatus.SUCCESS.value,
+                duration_seconds=0,
+                calendar_reason=market_status,
+                data_readiness_status="market_closed",
             )
-
-            if sample is not None and not sample.empty:
-                last_trade = pd.Timestamp(sample.index[-1]).date()
-                days_since = (today_jakarta() - last_trade).days
-
-                # Morning scan runs BEFORE market opens → last_trade = yesterday is normal (gap=1)
-                # Closing scan runs AFTER market closes → last_trade should be today (gap=0)
-                holiday_threshold = 1 if self._mode == "morning" else 0
-
-                if days_since > holiday_threshold:
-                    run_log.info("market_likely_holiday", phase="market_check", last_trade=str(last_trade), days_since=days_since)
-                    if sender:
-                        await sender.send_signal(MARKET_CLOSED_HOLIDAY)
-                    if run_logs_repo and run_id:
-                        run_logs_repo.update_run(run_id, status=RunStatus.SUCCESS.value, duration_seconds=0)
-                    return True
-        except Exception as e:
-            run_log.warning("holiday_check_failed", phase="market_check", error=str(e))
+            released = self._release_run_lock(locks_repo, run_lock, run_log)
+            return updated and released
+        if market_status in {"official_holiday", "calendar_override"}:
+            run_log.info(f"market_closed_{market_status}", phase="market_check")
+            if sender:
+                await sender.send_signal(MARKET_CLOSED_HOLIDAY)
+            updated = await self._update_run_log(
+                run_logs_repo,
+                run_id,
+                run_log,
+                sender,
+                status=RunStatus.SUCCESS.value,
+                duration_seconds=0,
+                calendar_reason=market_status,
+                data_readiness_status="market_closed",
+            )
+            released = self._release_run_lock(locks_repo, run_lock, run_log)
+            return updated and released
 
         # --- Phase: Data fetch ---
         tickers = [single_ticker] if single_ticker else list(TICKERS)
         fetcher = MarketDataFetcher(ohlcv_repo=ohlcv_repo)
+        coverage = FetchCoverage(requested_tickers=tickers)
 
         try:
-            all_data = fetcher.fetch_all(tickers)
+            fetch_result = fetcher.fetch_all_with_coverage(tickers)
+            all_data = fetch_result.data
+            coverage = fetch_result.coverage
         except Exception as e:
             run_log.error("data_fetch_failed", phase="fetch", error=str(e))
-            if run_logs_repo and run_id:
-                run_logs_repo.update_run(
-                    run_id,
-                    status=RunStatus.FAILED.value,
-                    error_message=str(e),
-                    duration_seconds=time.time() - start_time,
-                )
+            coverage = fetcher.last_coverage
+            admin_alert_sent = False
             # P1-15: Admin alert isolation — failure here doesn't crash
             if sender:
                 try:
-                    await sender.send_admin_alert(
+                    admin_alert_sent = await sender.send_admin_alert(
                         escape_markdown_v2(
                             f"⚠️ SCAN FAILED\n"
+                            f"Run ID: {run_id}\n"
                             f"Mode: {self._mode}\n"
                             f"Date: {self._today}\n"
+                            f"Category: data_provider_error\n"
+                            f"Missing tickers: {', '.join(coverage.missing_tickers[:10])}\n"
                             f"Error: {e}"
                         )
                     )
                 except Exception:
                     run_log.warning("admin_alert_failed_on_fetch_error", phase="notify")
+            await self._update_run_log(
+                run_logs_repo,
+                run_id,
+                run_log,
+                sender,
+                status=RunStatus.FAILED.value,
+                error_message=str(e),
+                duration_seconds=time.time() - start_time,
+                fetched_count=coverage.fetched_count,
+                cached_count=coverage.cached_count,
+                missing_count=coverage.missing_count,
+                failure_count=coverage.failure_count,
+                missing_tickers=coverage.missing_tickers,
+                failed_fetch_tickers=coverage.failed_tickers,
+                failure_category="data_provider_error",
+                admin_alert_sent=admin_alert_sent,
+            )
+            self._release_run_lock(locks_repo, run_lock, run_log)
             return False
+
+        data_readiness_status, latest_trade_date, expected_trade_date = self._data_readiness_status(all_data)
+        if data_readiness_status != "ready":
+            run_log.warning(
+                data_readiness_status,
+                phase="market_check",
+                latest_trade_date=str(latest_trade_date),
+                expected_trade_date=str(expected_trade_date),
+            )
+            admin_alert_sent = await self._send_admin_alert(
+                sender,
+                run_log,
+                "\n".join(
+                    [
+                        data_readiness_status.upper(),
+                        f"Run ID: {run_id}",
+                        f"Mode: {self._mode}",
+                        f"Date: {self._today}",
+                        f"Latest trade date: {latest_trade_date}",
+                        f"Expected trade date: {expected_trade_date}",
+                    ]
+                ),
+                f"admin_alert_failed_on_{data_readiness_status}",
+            )
+            await self._update_run_log(
+                run_logs_repo,
+                run_id,
+                run_log,
+                sender,
+                status=RunStatus.FAILED.value,
+                error_message=(
+                    f"{data_readiness_status}: latest={latest_trade_date}, "
+                    f"expected={expected_trade_date}"
+                ),
+                duration_seconds=time.time() - start_time,
+                fetched_count=coverage.fetched_count,
+                cached_count=coverage.cached_count,
+                missing_count=coverage.missing_count,
+                failure_count=coverage.failure_count,
+                missing_tickers=coverage.missing_tickers,
+                failed_fetch_tickers=coverage.failed_tickers,
+                calendar_reason=market_status,
+                data_readiness_status=data_readiness_status,
+                failure_category=data_readiness_status,
+                admin_alert_sent=admin_alert_sent,
+            )
+            self._release_run_lock(locks_repo, run_lock, run_log)
+            return False
+
+        if coverage.is_partial:
+            run_log.warning(
+                "partial_fetch",
+                phase="fetch",
+                fetched=coverage.fetched_count,
+                cached=coverage.cached_count,
+                missing=coverage.missing_count,
+                failed=coverage.failure_count,
+                missing_tickers=coverage.missing_tickers,
+            )
+
+        # Closing scans should not run on stale data.
+        # If the calendar says today is a trading day but the latest candle is still
+        # behind today's expected close, this is a data freshness problem, not a holiday.
+        if self._mode == "closing":
+            latest_trade_date = None
+            for df in all_data.values():
+                if df is None or df.empty:
+                    continue
+                candidate = pd.Timestamp(df.index[-1]).date()
+                if latest_trade_date is None or candidate > latest_trade_date:
+                    latest_trade_date = candidate
+
+            expected_trade_date = self._market_calendar.expected_last_trade_day(today_jakarta(), mode=self._mode)
+            if latest_trade_date is not None and latest_trade_date < expected_trade_date:
+                run_log.warning(
+                    "market_data_pending",
+                    phase="market_check",
+                    latest_trade_date=str(latest_trade_date),
+                    expected_trade_date=str(expected_trade_date),
+                )
+                if sender:
+                    try:
+                        await sender.send_admin_alert(
+                            escape_markdown_v2(
+                                f"⚠️ MARKET DATA PENDING\n"
+                                f"Mode: {self._mode}\n"
+                                f"Date: {self._today}\n"
+                                f"Latest trade date: {latest_trade_date}\n"
+                                f"Expected trade date: {expected_trade_date}"
+                            )
+                        )
+                    except Exception:
+                        run_log.warning("admin_alert_failed_on_market_data_pending", phase="notify")
+                if run_logs_repo and run_id:
+                    run_logs_repo.update_run(
+                        run_id,
+                        status=RunStatus.FAILED.value,
+                        error_message=f"Market data pending: latest={latest_trade_date}, expected={expected_trade_date}",
+                        duration_seconds=time.time() - start_time,
+                    )
+                return False
 
         # --- Phase: Process tickers (validate, enrich, score) ---
         validator = DataValidator()
@@ -225,7 +520,7 @@ class ZENTRAOrchestrator:
                 run_log.warning("expire_signals_failed", phase="lifecycle", error=str(e))
 
         # --- Phase: Build messages ---
-        messages, signal_lines = self._build_messages(
+        messages, signal_lines, persistence_failures = self._build_messages(
             exit_signals=exit_signals,
             buy_signals=buy_signals,
             watch_signals=watch_signals,
@@ -235,6 +530,12 @@ class ZENTRAOrchestrator:
             run_id=run_id,
             run_log=run_log,
         )
+        if persistence_failures:
+            run_log.error(
+                "db_write_failure",
+                phase="persist",
+                failures=persistence_failures,
+            )
 
         if not messages:
             # Check for active positions — avoid misleading "no signal" when positions exist
@@ -242,8 +543,44 @@ class ZENTRAOrchestrator:
             if signals_repo:
                 try:
                     active_positions = signals_repo.get_all_active_signals()
-                except Exception:
-                    pass
+                except Exception as e:
+                    run_log.error("active_positions_lookup_failed", phase="persist", error=str(e))
+                    admin_alert_sent = await self._send_admin_alert(
+                        sender,
+                        run_log,
+                        "\n".join(
+                            [
+                                "SCAN FAILED",
+                                f"Run ID: {run_id}",
+                                f"Mode: {self._mode}",
+                                f"Date: {self._today}",
+                                "Category: db_read",
+                                f"Error: {e}",
+                            ]
+                        ),
+                        "admin_alert_failed_on_active_positions",
+                    )
+                    await self._update_run_log(
+                        run_logs_repo,
+                        run_id,
+                        run_log,
+                        sender,
+                        status=RunStatus.FAILED.value,
+                        duration_seconds=time.time() - start_time,
+                        fetched_count=coverage.fetched_count,
+                        cached_count=coverage.cached_count,
+                        missing_count=coverage.missing_count,
+                        failure_count=coverage.failure_count,
+                        missing_tickers=coverage.missing_tickers,
+                        failed_fetch_tickers=coverage.failed_tickers,
+                        calendar_reason=market_status,
+                        data_readiness_status=data_readiness_status,
+                        failure_category="db_read",
+                        admin_alert_sent=admin_alert_sent,
+                        error_message=str(e),
+                    )
+                    self._release_run_lock(locks_repo, run_lock, run_log)
+                    return False
 
             if active_positions:
                 esc = escape_markdown_v2
@@ -279,6 +616,7 @@ class ZENTRAOrchestrator:
                     f"_Exit akan otomatis dikirim jika TP/SL tercapai\\._"
                 )
             else:
+                run_log.info("no_signal_output", phase="summary")
                 messages.append(random.Random(self._today).choice(NO_SIGNAL_MESSAGES))
 
         duration = time.time() - start_time
@@ -301,17 +639,39 @@ class ZENTRAOrchestrator:
         # P1-15: Signal delivery and admin alerts are isolated
         telegram_sent = 0
         telegram_failed_count = 0
+        admin_alert_sent = False
 
         if sender and not self._dry_run:
             # Main channel delivery — all signals (BUY, EXIT, WATCH, expired)
             results = await sender.send_batch(messages)
             telegram_sent = sum(results)
             telegram_failed_count = len(results) - telegram_sent
+            if telegram_failed_count:
+                run_log.error(
+                    "telegram_delivery_partial",
+                    phase="notify",
+                    sent=telegram_sent,
+                    failed=telegram_failed_count,
+                )
+                admin_alert_sent = await self._send_admin_alert(
+                    sender,
+                    run_log,
+                    "\n".join(
+                        [
+                            "TELEGRAM DELIVERY FAILURE",
+                            f"Run ID: {run_id}",
+                            f"Mode: {self._mode}",
+                            f"Sent: {telegram_sent}",
+                            f"Failed: {telegram_failed_count}",
+                        ]
+                    ),
+                    "admin_alert_failed_on_telegram_delivery",
+                )
 
             # Alert admin if too many tickers failed
-            if len(failed_tickers) >= 5:
+            if len(failed_tickers) >= 5 or coverage.missing_count > 0:
                 try:
-                    await sender.send_admin_alert(
+                    admin_alert_sent = await sender.send_admin_alert(
                         escape_markdown_v2(
                             f"⚠️ HIGH FAILURE RATE\n"
                             f"Mode: {self._mode}\n"
@@ -325,27 +685,47 @@ class ZENTRAOrchestrator:
             telegram_sent = len(messages)
 
         # --- Phase: Update run log ---
-        if run_logs_repo and run_id:
-            if len(failed_tickers) == 0:
-                run_status = RunStatus.SUCCESS.value
-            elif len(failed_tickers) > 15:
-                run_status = RunStatus.FAILED.value
-            else:
-                run_status = RunStatus.PARTIAL.value
+        failed_fetch_tickers = sorted(set(coverage.failed_tickers + coverage.missing_tickers))
+        run_status = self._classify_run_status(
+            failed_count=len(failed_tickers),
+            coverage=coverage,
+            telegram_failed=telegram_failed_count,
+            persistence_failures=persistence_failures,
+        )
 
-            run_logs_repo.update_run(
-                run_id,
-                status=run_status,
-                duration_seconds=duration,
-                tickers_scanned=total,
-                tickers_failed=failed_tickers if failed_tickers else None,
-                signals_generated=len(all_signals),
-                buy_signals=len(buy_signals),
-                exit_signals=len(exit_signals),
-                watch_signals=len(watch_signals),
-                telegram_sent=telegram_sent,
-                telegram_failed=telegram_failed_count,
-            )
+        updated = await self._update_run_log(
+            run_logs_repo,
+            run_id,
+            run_log,
+            sender,
+            status=run_status,
+            duration_seconds=duration,
+            tickers_scanned=total,
+            tickers_failed=failed_tickers if failed_tickers else None,
+            signals_generated=len(all_signals),
+            buy_signals=len(buy_signals),
+            exit_signals=len(exit_signals),
+            watch_signals=len(watch_signals),
+            telegram_sent=telegram_sent,
+            telegram_failed=telegram_failed_count,
+            fetched_count=coverage.fetched_count,
+            cached_count=coverage.cached_count,
+            missing_count=coverage.missing_count,
+            failure_count=coverage.failure_count,
+            missing_tickers=coverage.missing_tickers,
+            failed_fetch_tickers=failed_fetch_tickers,
+            calendar_reason=market_status,
+            data_readiness_status=data_readiness_status,
+            failure_category=(
+                "db_write"
+                if persistence_failures
+                else "partial_fetch"
+                if coverage.is_partial
+                else None
+            ),
+            admin_alert_sent=admin_alert_sent,
+            error_message="; ".join(persistence_failures) if persistence_failures else None,
+        )
 
         # P1-11: Log skip reasons summary
         if skipped:
@@ -358,9 +738,12 @@ class ZENTRAOrchestrator:
             signals=len(all_signals),
             failed=len(failed_tickers),
             skipped=len(skipped),
+            status=run_status,
+            coverage_ratio=round(coverage.coverage_ratio, 3),
         )
 
-        return len(failed_tickers) <= 15
+        released = self._release_run_lock(locks_repo, run_lock, run_log)
+        return updated and released and run_status != RunStatus.FAILED.value
 
     # --- Pipeline stage methods (P1-9) ---
 
@@ -538,13 +921,14 @@ class ZENTRAOrchestrator:
         narrative_gen: NarrativeGenerator,
         run_id: str | None,
         run_log,
-    ) -> tuple[list[str], list[str]]:
+    ) -> tuple[list[str], list[str], list[str]]:
         """Build all message lists for Telegram delivery.
 
         All signals go to main channel — admin only gets errors.
         """
         messages: list[str] = []
         signal_lines: list[str] = []
+        persistence_failures: list[str] = []
 
         for sig in exit_signals:
             active = signals_repo.get_active_signal(sig.ticker) if signals_repo else None
@@ -566,6 +950,7 @@ class ZENTRAOrchestrator:
                     )
                 except Exception as e:
                     run_log.error("close_signal_failed", phase="persist", ticker=sig.ticker, error=str(e))
+                    persistence_failures.append(f"close_signal:{sig.ticker}:{e}")
 
         for sig in buy_signals:
             messages.append(format_buy_message(sig))
@@ -575,6 +960,7 @@ class ZENTRAOrchestrator:
                     signals_repo.create_signal(sig, run_id=run_id)
                 except Exception as e:
                     run_log.error("persist_signal_failed", phase="persist", ticker=sig.ticker, error=str(e))
+                    persistence_failures.append(f"create_signal:{sig.ticker}:{e}")
 
         # WATCH signals — transparent to channel, NOT persisted to DB
         for sig in watch_signals:
@@ -593,7 +979,7 @@ class ZENTRAOrchestrator:
             )
             signal_lines.append(f"⏰ EXPIRED {exp_ticker}")
 
-        return messages, signal_lines
+        return messages, signal_lines, persistence_failures
 
     async def run_weekly_report(self) -> bool:
         """Generate and send weekly performance report."""

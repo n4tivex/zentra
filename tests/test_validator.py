@@ -18,6 +18,11 @@ def validator():
     return DataValidator()
 
 
+@pytest.fixture(autouse=True)
+def freeze_today(monkeypatch):
+    monkeypatch.setattr("zentra.data.validator.today_jakarta", lambda: datetime(2026, 5, 4).date())
+
+
 class TestDataValidator:
     def test_empty_dataframe(self, validator):
         df = pd.DataFrame()

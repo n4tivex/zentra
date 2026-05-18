@@ -195,7 +195,7 @@ NO_SIGNAL_MESSAGES: list[str] = [
 
 MARKET_CLOSED_WEEKEND: str = "📊 Pasar tutup hari ini \\(weekend\\)\\. Tidak ada scan\\."
 
-MARKET_CLOSED_HOLIDAY: str = "📊 Pasar kemungkinan tutup hari ini \\(libur nasional\\)\\. Tidak ada data baru tersedia\\."
+MARKET_CLOSED_HOLIDAY: str = "📊 Pasar tutup hari ini berdasarkan kalender market resmi\\. Tidak ada scan\\."
 
 EXPIRED_SIGNAL: list[str] = [
     "⏰ Sinyal {ticker} sudah aktif lebih dari {days} hari tanpa EXIT trigger. Sinyal otomatis di-expire. Cek harga terkini secara manual.",

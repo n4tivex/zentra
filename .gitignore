@@ -33,3 +33,18 @@ Thumbs.db
 
 # Generated reports
 reports/
+
+# AI agent configuration
+AGENTS.md
+
+# Sisyphus planning artifacts
+.sisyphus/
+
+# Ruff formatter/linter cache
+.ruff_cache/
+
+# Log files
+*.log
+
+# Python egg (standalone, not egg-info)
+*.egg

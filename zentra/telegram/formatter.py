@@ -24,8 +24,10 @@ def escape_markdown_v2(text: str) -> str:
     return "".join(result)
 
 
-def format_rupiah(amount: int | float) -> str:
+def format_rupiah(amount: int | float | None) -> str:
     """Format number as Indonesian Rupiah (Rp 1.250)."""
+    if amount is None:
+        return "N/A"
     num = int(round(amount))
     formatted = f"{num:,}".replace(",", ".")
     return f"Rp {formatted}"
@@ -55,7 +57,7 @@ def format_buy_message(result: SignalResult) -> str:
     ticker = result.ticker
     name = TICKER_NAMES.get(ticker, ticker)
     narrative = result.narrative or ""
-    snap = result.indicator_snapshot
+    snap = result.indicator_snapshot or {}
 
     entry = format_rupiah(result.entry_price) if result.entry_price else "N/A"
     tp = format_rupiah(result.take_profit) if result.take_profit else "N/A"
@@ -139,7 +141,9 @@ def format_exit_message(result: SignalResult, active_signal: dict) -> str:
     ticker = result.ticker
     name = TICKER_NAMES.get(ticker, ticker)
     narrative = result.narrative or ""
-    close = result.indicator_snapshot.get("close", 0)
+    active_signal = active_signal or {}
+    snap = result.indicator_snapshot or {}
+    close = snap.get("close", 0)
     entry = active_signal.get("entry_price", 0)
     exit_reasons = result.exit_reasons or []
     primary_reason = result.reason or "Technical reversal"
@@ -211,7 +215,7 @@ def format_watch_message(result: SignalResult) -> str:
     name = TICKER_NAMES.get(ticker, ticker)
     score = result.score
     confluence = result.confluence_count
-    snap = result.indicator_snapshot
+    snap = result.indicator_snapshot or {}
     esc = escape_markdown_v2
 
     # Compact indicator line
@@ -252,6 +256,27 @@ def format_daily_summary(
         "",
         signals,
     ]
+    return "\n".join(lines)
+
+
+def format_failure_message(date_str: str, reason_code: str, detail: str = "") -> str:
+    """Format a public failure message without implying the wrong root cause."""
+    esc = escape_markdown_v2
+    reason_labels = {
+        "market_data_pending": "Data pasar belum final",
+        "provider_stale": "Data provider stale",
+        "data_provider_error": "Fetch data gagal",
+        "partial_fetch": "Coverage data tidak lengkap",
+        "db_write": "Penyimpanan hasil gagal",
+    }
+    label = reason_labels.get(reason_code, "Scan gagal")
+    lines = [
+        f"ðŸ“Š *Daily Scan â€” {esc(date_str)}*",
+        "",
+        esc(label),
+    ]
+    if detail:
+        lines.append(esc(detail))
     return "\n".join(lines)
 
 
