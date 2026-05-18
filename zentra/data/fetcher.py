@@ -159,7 +159,7 @@ class MarketDataFetcher:
             return cached
 
         ticker_jk = f"{ticker}.JK"
-        end = datetime.now(tz=timezone.utc)
+        end = datetime.now(tz=timezone.utc) + timedelta(days=1)
         start = end - timedelta(days=days)
 
         try:
@@ -199,7 +199,7 @@ class MarketDataFetcher:
         reraise=True,
     )
     def _fetch_from_yahoo(self, tickers_jk: list[str], days: int) -> pd.DataFrame:
-        end = datetime.now(tz=timezone.utc)
+        end = datetime.now(tz=timezone.utc) + timedelta(days=1)
         start = end - timedelta(days=days)
         df = yf.download(
             tickers_jk,
