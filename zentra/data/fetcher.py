@@ -6,7 +6,7 @@ Per PRD §5.1: batch download, .JK suffix, cache check, retry logic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import structlog
@@ -81,6 +81,7 @@ class MarketDataFetcher:
         self,
         tickers: list[str],
         days: int = DATA.LOOKBACK_DAYS,
+        min_latest_date: date | None = None,
     ) -> FetchResult:
         """Fetch OHLCV and return explicit coverage telemetry."""
         results: dict[str, pd.DataFrame] = {}
@@ -89,7 +90,7 @@ class MarketDataFetcher:
         self.last_coverage = coverage
 
         for ticker in tickers:
-            cached = self._get_cached(ticker, coverage)
+            cached = self._get_cached(ticker, coverage, min_latest_date=min_latest_date)
             if cached is not None and not cached.empty:
                 results[ticker] = cached
                 coverage.cached_tickers.append(ticker)
@@ -152,9 +153,9 @@ class MarketDataFetcher:
 
         return FetchResult(results, coverage)
 
-    def fetch_single(self, ticker: str, days: int = DATA.LOOKBACK_DAYS) -> pd.DataFrame:
+    def fetch_single(self, ticker: str, days: int = DATA.LOOKBACK_DAYS, min_latest_date: date | None = None) -> pd.DataFrame:
         """Fetch a single ticker. Cache-first, then network fallback."""
-        cached = self._get_cached(ticker)
+        cached = self._get_cached(ticker, min_latest_date=min_latest_date)
         if cached is not None and not cached.empty:
             return cached
 
@@ -178,14 +179,25 @@ class MarketDataFetcher:
 
         return self._normalize(df)
 
-    def _get_cached(self, ticker: str, coverage: FetchCoverage | None = None) -> pd.DataFrame | None:
+    def _get_cached(self, ticker: str, coverage: FetchCoverage | None = None, min_latest_date: date | None = None) -> pd.DataFrame | None:
         if self._ohlcv_repo is None:
             return None
         getter = getattr(self._ohlcv_repo, "get_cached_data", None)
         if not callable(getter):
             return None
         try:
-            return getter(ticker)
+            data = getter(ticker)
+            if data is not None and not data.empty and min_latest_date is not None:
+                cache_latest = pd.Timestamp(data.index[-1]).date()
+                if cache_latest < min_latest_date:
+                    log.info(
+                        "cache_stale",
+                        ticker=ticker,
+                        last_date=str(cache_latest),
+                        min_expected=str(min_latest_date),
+                    )
+                    return None
+            return data
         except Exception as e:
             if coverage is not None:
                 coverage.cache_failed_tickers.append(ticker)

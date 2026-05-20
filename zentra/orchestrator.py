@@ -320,9 +320,10 @@ class ZENTRAOrchestrator:
         tickers = [single_ticker] if single_ticker else list(TICKERS)
         fetcher = MarketDataFetcher(ohlcv_repo=ohlcv_repo)
         coverage = FetchCoverage(requested_tickers=tickers)
+        expected_trade_date = self._market_calendar.expected_last_trade_day(today_jakarta(), mode=self._mode)
 
         try:
-            fetch_result = fetcher.fetch_all_with_coverage(tickers)
+            fetch_result = fetcher.fetch_all_with_coverage(tickers, min_latest_date=expected_trade_date)
             all_data = fetch_result.data
             coverage = fetch_result.coverage
         except Exception as e:
