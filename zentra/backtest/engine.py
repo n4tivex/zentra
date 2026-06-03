@@ -94,7 +94,7 @@ class BacktestResult:
 class BacktestEngine:
     """Walk-forward backtest engine with strict no-lookahead guarantee."""
 
-    MIN_WARMUP_DAYS = 55  # Enough for EMA_50 + buffer
+    MIN_WARMUP_DAYS = 30  # Enough for EMA_21 + buffer
 
     def __init__(self) -> None:
         self.indicators = TechnicalIndicators()

@@ -40,6 +40,7 @@ class SignalStatus(str, Enum):
 
 class RunMode(str, Enum):
     MORNING = "morning"
+    MIDDAY = "midday"
     CLOSING = "closing"
     MANUAL = "manual"
 
@@ -130,9 +131,12 @@ class ScoringConfig:
     MIN_CONFLUENCE: int = 3
     MIN_CONFLUENCE_WATCH: int = 2
     MIN_RR_RATIO: float = 1.5
-    MAX_SL_PCT: float = 0.08
+    MAX_SL_PCT: float = 0.05
     SL_ATR_MULTIPLIER: float = 1.5
     TP_ATR_MULTIPLIER: float = 2.5
+    FAST_MA_DAYS: int = 9
+    SLOW_MA_DAYS: int = 21
+    VOLUME_LOOKBACK_DAYS: int = 5
     SIGNAL_EXPIRY_DAYS: int = 10
     EXIT_SCORE_THRESHOLD: int = 40
     MIN_HOLD_DAYS_BEFORE_EXIT: int = 1
@@ -167,12 +171,12 @@ TICKERS: tuple[str, ...] = (
 
 TICKER_NAMES: dict[str, str] = {
     "BBCA": "Bank Central Asia",
-    "BMRI": "Bank Mandiri",
-    "BBRI": "Bank Rakyat Indonesia",
+    "BMRI": "Bank Mandiri (Persero)",
+    "BBRI": "Bank Rakyat Indonesia (Persero)",
     "NCKL": "Trimegah Bangun Persada",
-    "RMKE": "Richmore Global (RMKE)",
+    "RMKE": "RMK Energy",
     "BREN": "Barito Renewables Energy",
-    "CBDK": "Cipta Bintang Djaya Karya",
+    "CBDK": "Bangun Kosambi Sukses",
     "PTRO": "Petrosea",
     "BRPT": "Barito Pacific",
     "BUMI": "Bumi Resources",
@@ -180,8 +184,8 @@ TICKER_NAMES: dict[str, str] = {
     "BRMS": "Bumi Resources Minerals",
     "ENRG": "Energi Mega Persada",
     "AMMN": "Amman Mineral Internasional",
-    "OASA": "Oakwood Semesta",
-    "ADMR": "Adaro Minerals Indonesia",
+    "OASA": "Maharaksa Biru Energi",
+    "ADMR": "Alamtri Minerals Indonesia",
     "RAJA": "Rukun Raharja",
     "SIMP": "Salim Ivomas Pratama",
     "GZCO": "Gozco Plantations",
@@ -196,12 +200,12 @@ TICKER_NAMES: dict[str, str] = {
 OHLCV_REQUIRED_COLUMNS: tuple[str, ...] = ("open", "high", "low", "close", "volume")
 
 INDICATOR_REQUIRED_COLUMNS: tuple[str, ...] = (
-    "EMA_20", "EMA_50",
+    "EMA_9", "EMA_21",
     "MACD_12_26_9", "MACDh_12_26_9", "MACDs_12_26_9",
     "RSI_14",
     "BBL_20_2.0_2.0", "BBM_20_2.0_2.0", "BBU_20_2.0_2.0",
     "ATRr_14",
-    "VOL_SMA_20",
+    "VOL_SMA_5",
 )
 
 

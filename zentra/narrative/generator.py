@@ -42,14 +42,14 @@ class NarrativeGenerator:
         parts.append(rng.choice(opening_pool).format(ticker=f"${result.ticker} ({name})"))
 
         # 2. Trend block
-        ema20 = snap.get("ema_20", 0)
-        ema50 = snap.get("ema_50", 0)
-        if ema20 and ema50:
-            if ema20 > ema50:
+        ema_fast = snap.get("ema_9", 0)
+        ema_slow = snap.get("ema_21", 0)
+        if ema_fast and ema_slow:
+            if ema_fast > ema_slow:
                 parts.append(rng.choice(blocks.TREND_UPTREND))
-            elif ema50 != 0 and abs(ema20 - ema50) / ema50 <= 0.02:
+            elif ema_slow != 0 and abs(ema_fast - ema_slow) / ema_slow <= 0.02:
                 parts.append(rng.choice(blocks.TREND_CROSSING))
-            elif ema20 < ema50:
+            elif ema_fast < ema_slow:
                 parts.append(rng.choice(blocks.TREND_NARROWING))
 
         # 3. Momentum block (RSI)

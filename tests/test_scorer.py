@@ -65,8 +65,8 @@ class TestSignalScorer:
 
         from zentra.analysis.indicators import TechnicalIndicators
 
-        # With only 40 rows, EMA_50 won't have enough data and will be NaN
-        with pytest.raises(CalculationError, match="Critical indicator columns are NaN"):
+        # Flat OHLC data should fail before scoring because ATR is effectively zero.
+        with pytest.raises(CalculationError, match="ATR too small"):
             TechnicalIndicators().compute_all(df)
 
     def test_score_components_sum_to_100_max(self, scorer, indicators, bullish_df):
@@ -86,9 +86,9 @@ class TestSignalScorer:
         df = indicators.compute_all(bullish_df)
         result = scorer.score_buy("TEST", df)
         required_keys = [
-            "ema_20", "ema_50", "rsi_14", "macd", "macd_signal",
+            "ema_9", "ema_21", "rsi_14", "rsi_crossed_up", "macd", "macd_signal",
             "macd_histogram", "bb_lower", "bb_upper", "atr_14",
-            "close", "volume", "volume_ratio",
+            "close", "volume", "volume_ratio", "volume_sma_5",
         ]
         for key in required_keys:
             assert key in result.indicator_snapshot

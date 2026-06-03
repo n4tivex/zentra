@@ -137,7 +137,7 @@ class ZENTRAOrchestrator:
             return "provider_stale", None, expected_trade_date
         if latest_trade_date >= expected_trade_date:
             return "ready", latest_trade_date, expected_trade_date
-        if self._mode == "closing" and latest_trade_date == self._market_calendar.previous_trading_day(expected_trade_date):
+        if self._mode in {"closing", "midday"} and latest_trade_date == self._market_calendar.previous_trading_day(expected_trade_date):
             return "market_data_pending", latest_trade_date, expected_trade_date
         return "provider_stale", latest_trade_date, expected_trade_date
 
@@ -425,10 +425,10 @@ class ZENTRAOrchestrator:
                 missing_tickers=coverage.missing_tickers,
             )
 
-        # Closing scans should not run on stale data.
+        # Midday and closing scans should not run on stale data.
         # If the calendar says today is a trading day but the latest candle is still
         # behind today's expected close, this is a data freshness problem, not a holiday.
-        if self._mode == "closing":
+        if self._mode in {"closing", "midday"}:
             latest_trade_date = None
             for df in all_data.values():
                 if df is None or df.empty:
@@ -848,7 +848,7 @@ class ZENTRAOrchestrator:
         """P1-8: Robust partial candle handling.
 
         Morning mode: always drop candle if last_date >= today (today's candle is partial).
-        Closing mode: keep all candles (today's candle should be closed by now).
+        Midday and closing modes keep today's candle for intraday/closed-session scans.
         """
         if self._mode == "morning" and not df.empty:
             last_date = pd.Timestamp(df.index[-1]).date()

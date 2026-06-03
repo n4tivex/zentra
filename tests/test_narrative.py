@@ -35,8 +35,8 @@ def make_buy_result(
         rr_ratio=1.67,
         signal_strength=strength,
         indicator_snapshot={
-            "ema_20": 9400.5,
-            "ema_50": 9200.3,
+            "ema_9": 9400.5,
+            "ema_21": 9200.3,
             "rsi_14": 45.2,
             "macd": 15.3,
             "macd_signal": 10.1,

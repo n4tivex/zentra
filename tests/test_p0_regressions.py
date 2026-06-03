@@ -25,8 +25,8 @@ class DummyRiskCalc:
 def test_macd_zero_values_are_not_silently_dropped(bullish_df: pd.DataFrame):
     df = bullish_df.copy()
 
-    df["EMA_20"] = 100.0
-    df["EMA_50"] = 99.0
+    df["EMA_9"] = 100.0
+    df["EMA_21"] = 99.0
 
     df["MACD_12_26_9"] = 0.0
     df["MACDs_12_26_9"] = -0.1
@@ -36,7 +36,7 @@ def test_macd_zero_values_are_not_silently_dropped(bullish_df: pd.DataFrame):
     df["BBL_20_2.0_2.0"] = 95.0
     df["BBM_20_2.0_2.0"] = 100.0
     df["BBU_20_2.0_2.0"] = 110.0
-    df["VOL_SMA_20"] = 1000
+    df["VOL_SMA_5"] = 1000
     df["ATRr_14"] = 3.0
 
     scorer = SignalScorer()

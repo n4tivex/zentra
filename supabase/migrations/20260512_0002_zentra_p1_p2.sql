@@ -42,7 +42,7 @@ END $$;
 DO $$ BEGIN
     ALTER TABLE public.run_logs
         ADD CONSTRAINT chk_run_logs_run_mode
-        CHECK (run_mode IN ('morning', 'closing', 'manual'));
+        CHECK (run_mode IN ('morning', 'midday', 'closing', 'manual'));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;

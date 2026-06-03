@@ -16,7 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ZENTRA Trading Signal Engine")
     parser.add_argument(
         "--mode",
-        choices=["morning", "closing", "manual", "weekly"],
+        choices=["morning", "midday", "closing", "manual", "weekly"],
         default="morning",
         help="Scan mode (weekly = performance report only)",
     )
