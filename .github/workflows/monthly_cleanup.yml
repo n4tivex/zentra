@@ -4,6 +4,10 @@ on:
     types: [trigger-monthly-cleanup]
   workflow_dispatch:
 
+concurrency:
+  group: zentra-monthly-cleanup
+  cancel-in-progress: false
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest

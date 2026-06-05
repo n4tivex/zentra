@@ -964,7 +964,12 @@ class ZENTRAOrchestrator:
                     persistence_failures.append(f"create_signal:{sig.ticker}:{e}")
 
         # WATCH signals — transparent to channel, NOT persisted to DB
+        # Dedup within same run: only one WATCH per ticker per run
+        seen_watch_tickers: set[str] = set()
         for sig in watch_signals:
+            if sig.ticker in seen_watch_tickers:
+                continue
+            seen_watch_tickers.add(sig.ticker)
             messages.append(format_watch_message(sig))
             signal_lines.append(f"👁 WATCH {sig.ticker} (skor: {sig.score})")
 

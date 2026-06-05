@@ -6,14 +6,14 @@ Per PRD §10.3: create, update, query run logs.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
 from supabase import Client
 
 from zentra.config import RunStatus
-from zentra.exceptions import DatabaseInsertError, DatabaseUpdateError
+from zentra.exceptions import DatabaseDeleteError, DatabaseInsertError, DatabaseUpdateError
 
 log = structlog.get_logger()
 
@@ -126,3 +126,23 @@ class RunLogsRepo:
         except Exception as e:
             log.error("db_update_run_failed", run_id=run_id, error=str(e))
             raise DatabaseUpdateError(f"Failed to update run log {run_id}") from e
+
+    def cleanup_old_logs(self, retention_days: int = 180) -> int:
+        """Delete run logs older than retention_days."""
+        cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=retention_days)).isoformat()
+        try:
+            before = (
+                self._client.table(self._table)
+                .select("id")
+                .lt("created_at", cutoff)
+                .execute()
+            )
+            rows_to_delete = len(before.data) if before.data else 0
+            if rows_to_delete == 0:
+                return 0
+            self._client.table(self._table).delete().lt("created_at", cutoff).execute()
+            log.info("run_logs_cleanup", deleted=rows_to_delete, cutoff=cutoff, retention_days=retention_days)
+            return rows_to_delete
+        except Exception as e:
+            log.error("run_logs_cleanup_failed", error=str(e))
+            raise DatabaseDeleteError("Failed to cleanup old run logs") from e
