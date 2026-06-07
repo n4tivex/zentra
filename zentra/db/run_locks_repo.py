@@ -27,13 +27,16 @@ class RunLocksRepo:
     def build_key(mode: str, run_date: str, slot: str) -> str:
         return f"{mode}:{run_date}:{slot}"
 
-    def acquire(self, *, mode: str, run_date: str, slot: str, run_id: str | None = None) -> dict | None:
+    def acquire(self, *, mode: str, run_date: str, slot: str, run_id: str | None = None, run_logs_repo: object | None = None) -> dict | None:
         """Acquire a lock, returning None when the slot is already running.
 
         Two layers of protection:
         1. Recent lock check — prevents sequential duplicates within N hours
            (e.g. cronjob.org triggering midday 4× in one hour).
         2. Unique constraint — prevents truly concurrent runs.
+
+        If run_logs_repo is provided, Layer 1 checks if the previous run FAILED.
+        If so, the old lock is deleted and the new acquisition is allowed (retry window).
         """
         lock_key = self.build_key(mode, run_date, slot)
         now = datetime.now(tz=timezone.utc)
@@ -43,19 +46,48 @@ class RunLocksRepo:
             cutoff = (now - timedelta(hours=LOCK_THROTTLE_HOURS)).isoformat()
             recent = (
                 self._client.table(self._table)
-                .select("id")
+                .select("id, owner_run_id")
                 .eq("lock_key", lock_key)
                 .gte("acquired_at", cutoff)
                 .execute()
             )
             if recent.data:
-                log.warning(
-                    "run_lock_throttled",
-                    lock_key=lock_key,
-                    run_id=run_id,
-                    existing_id=recent.data[0]["id"],
-                )
-                return None
+                existing = recent.data[0]
+                # If run_logs_repo is available, check if the previous run FAILED
+                if run_logs_repo and existing.get("owner_run_id"):
+                    try:
+                        getter = getattr(run_logs_repo, "get_run", None)
+                        if callable(getter):
+                            prev_run = getter(existing["owner_run_id"])
+                            if prev_run and prev_run.get("status") == "FAILED":
+                                log.info(
+                                    "run_lock_retry_allowed",
+                                    lock_key=lock_key,
+                                    previous_run_id=existing["owner_run_id"],
+                                )
+                                self._client.table(self._table).delete().eq("id", existing["id"]).execute()
+                                # Proceed to Layer 2 insert
+                                pass
+                            else:
+                                log.warning(
+                                    "run_lock_throttled",
+                                    lock_key=lock_key,
+                                    run_id=run_id,
+                                    existing_id=existing["id"],
+                                )
+                                return None
+                        else:
+                            return None
+                    except Exception:
+                        return None
+                else:
+                    log.warning(
+                        "run_lock_throttled",
+                        lock_key=lock_key,
+                        run_id=run_id,
+                        existing_id=existing["id"],
+                    )
+                    return None
         except Exception as e:
             log.error("run_lock_recent_check_failed", lock_key=lock_key, error=str(e))
 

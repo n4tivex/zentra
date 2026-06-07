@@ -30,17 +30,17 @@ class SignalsRepo:
         self._client = client
         self._table = "signals"
 
-    def get_active_signal(self, ticker: str) -> dict | None:
+    def get_active_signal(self, ticker: str, signal_type: str | None = "BUY") -> dict | None:
         try:
-            result = (
+            query = (
                 self._client.table(self._table)
                 .select("*")
                 .eq("ticker", ticker)
                 .eq("status", SignalStatus.ACTIVE.value)
-                .order("created_at", desc=True)
-                .limit(1)
-                .execute()
             )
+            if signal_type:
+                query = query.eq("signal_type", signal_type)
+            result = query.order("created_at", desc=True).limit(1).execute()
             return result.data[0] if result.data else None
         except Exception as e:
             log.error("db_get_active_signal_failed", ticker=ticker, error=str(e))
@@ -63,16 +63,20 @@ class SignalsRepo:
             raise DatabaseError("Failed to get active signals") from e
 
     def create_signal(self, result: SignalResult, run_id: str | None = None) -> dict:
-        """Insert a new signal record with active dedup protection."""
+        """Insert a new signal record with active dedup protection.
 
-        existing = self.get_active_signal(result.ticker)
-        if existing and existing.get("signal_type") == "BUY":
-            log.warning(
-                "duplicate_active_signal_blocked",
-                ticker=result.ticker,
-                existing_id=existing.get("id"),
-            )
-            return existing
+        Only BUY signals are dedup-protected — WATCH and EXIT signals pass through.
+        """
+
+        if result.signal_type == SignalType.BUY:
+            existing = self.get_active_signal(result.ticker, signal_type="BUY")
+            if existing and existing.get("signal_type") == "BUY":
+                log.warning(
+                    "duplicate_active_signal_blocked",
+                    ticker=result.ticker,
+                    existing_id=existing.get("id"),
+                )
+                return existing
 
         record: dict[str, Any] = {
             "ticker": result.ticker,
@@ -167,27 +171,36 @@ class SignalsRepo:
             raise DatabaseUpdateError(f"Failed to close signal {signal_id}") from e
 
     def expire_old_signals(self) -> list[dict]:
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=SCORING.SIGNAL_EXPIRY_DAYS)
+        now = datetime.now(tz=timezone.utc)
+        cutoff_buy = now - timedelta(days=SCORING.SIGNAL_EXPIRY_DAYS)
+        cutoff_watch = now - timedelta(days=1)
 
         try:
             result = (
                 self._client.table(self._table)
                 .select("*")
                 .eq("status", SignalStatus.ACTIVE.value)
-                .lt("created_at", cutoff.isoformat())
                 .execute()
             )
 
-            expired = result.data or []
-            for signal in expired:
+            expired: list[dict] = []
+            for row in (result.data or []):
+                created = row.get("created_at", "")
+                if not created:
+                    continue
+                st = row.get("signal_type", "BUY")
+                cutoff = cutoff_watch if st == "WATCH" else cutoff_buy
+                if datetime.fromisoformat(created.replace("Z", "+00:00")) >= cutoff:
+                    continue
+                expired.append(row)
                 # Validate transition
                 self._validate_transition(SignalStatus.ACTIVE, SignalStatus.EXPIRED)
                 resp = self._client.table(self._table).update({
                     "status": SignalStatus.EXPIRED.value,
-                    "closed_at": datetime.now(tz=timezone.utc).isoformat(),
-                }).eq("id", signal["id"]).eq("status", SignalStatus.ACTIVE.value).execute()
+                    "closed_at": now.isoformat(),
+                }).eq("id", row["id"]).eq("status", SignalStatus.ACTIVE.value).execute()
                 if isinstance(resp.data, list) and len(resp.data) == 0:
-                    log.info("signal_expire_idempotent", signal_id=signal["id"])
+                    log.info("signal_expire_idempotent", signal_id=row["id"])
 
             if expired:
                 log.info("signals_expired", count=len(expired))
@@ -229,6 +242,25 @@ class SignalsRepo:
         except Exception as e:
             log.error("db_get_closed_signals_failed", error=str(e))
             raise DatabaseError("Failed to get closed signals") from e
+
+    def watch_exists_today(self, ticker: str) -> bool:
+        """Check if a WATCH signal was already created today for this ticker."""
+        today_start = datetime.now(tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            result = (
+                self._client.table(self._table)
+                .select("id")
+                .eq("ticker", ticker)
+                .eq("signal_type", "WATCH")
+                .eq("status", SignalStatus.ACTIVE.value)
+                .gte("created_at", today_start.isoformat())
+                .limit(1)
+                .execute()
+            )
+            return len(result.data) > 0 if result.data else False
+        except Exception as e:
+            log.error("db_watch_exists_failed", ticker=ticker, error=str(e))
+            return False
 
     def get_active_signals_count(self) -> int:
         try:

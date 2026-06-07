@@ -31,25 +31,25 @@ OPENING_BORDERLINE: list[str] = [
 
 # 2. Trend blocks — EMA condition
 TREND_UPTREND: list[str] = [
-    "Dari sisi tren, EMA20 sudah berada di atas EMA50 — ini konfirmasi uptrend yang cukup reliable.",
-    "Trend-nya sudah bullish: EMA20 di atas EMA50, artinya pembeli masih dominan di timeframe menengah.",
-    "EMA20 vs EMA50 menunjukkan tren naik yang terkonfirmasi. Secara teknikal, ini landasan yang solid untuk entry.",
+    "Dari sisi tren, EMA9 sudah berada di atas EMA21 — ini konfirmasi uptrend yang cukup reliable.",
+    "Trend-nya sudah bullish: EMA9 di atas EMA21, artinya pembeli masih dominan di timeframe pendek.",
+    "EMA9 vs EMA21 menunjukkan tren naik yang terkonfirmasi. Secara teknikal, ini landasan yang solid untuk entry.",
 ]
 
 TREND_CROSSING: list[str] = [
-    "Yang menarik, EMA20 baru saja mendekati crossing point dengan EMA50 — ini bisa jadi awal perubahan tren yang signifikan.",
-    "EMA20 dan EMA50 hampir berpotongan. Golden cross potensial ini sering jadi turning point buat pergerakan harga.",
-    "Perhatikan EMA20 yang mulai mengejar EMA50. Crossing masih belum terjadi, tapi gap-nya sudah sangat tipis.",
+    "Yang menarik, EMA9 baru saja mendekati crossing point dengan EMA21 — ini bisa jadi awal perubahan tren yang signifikan.",
+    "EMA9 dan EMA21 hampir berpotongan. Golden cross potensial ini sering jadi turning point buat pergerakan harga.",
+    "Perhatikan EMA9 yang mulai mengejar EMA21. Crossing masih belum terjadi, tapi gap-nya sudah sangat tipis.",
 ]
 
 TREND_NARROWING: list[str] = [
-    "Tren memang masih downtrend secara teknis (EMA20 di bawah EMA50), tapi yang menarik: gap-nya mulai menyempit.",
-    "EMA20 masih di bawah EMA50, tapi jarak keduanya mulai mengecil — sinyal awal bahwa seller mulai kehilangan dominasi.",
+    "Tren memang masih downtrend secara teknis (EMA9 di bawah EMA21), tapi yang menarik: gap-nya mulai menyempit.",
+    "EMA9 masih di bawah EMA21, tapi jarak keduanya mulai mengecil — sinyal awal bahwa seller mulai kehilangan dominasi.",
     "Secara tren belum bullish, tapi ada progress: gap EMA semakin kecil dari hari sebelumnya.",
 ]
 
 TREND_DOWNTREND: list[str] = [
-    "Tren masih bearish — EMA20 masih di bawah EMA50 dan belum ada tanda reversal yang kuat.",
+    "Tren masih bearish — EMA9 masih di bawah EMA21 dan belum ada tanda reversal yang kuat.",
     "Dari sisi tren, EMA masih menunjukkan dominasi seller. Ini yang membatasi skor keseluruhan.",
     "Tren harga masih ke bawah berdasarkan EMA. Ini jadi faktor pengurang dalam analisis.",
 ]
@@ -81,7 +81,7 @@ RSI_EXTREMELY_OVERSOLD: list[str] = [
 
 # 4. Volume blocks
 VOLUME_HIGH: list[str] = [
-    "Volume hari ini {ratio:.1f}x dari rata-rata 20 hari — ada partisipasi yang jelas di balik pergerakan ini.",
+    "Volume hari ini {ratio:.1f}x dari rata-rata 5 hari — ada partisipasi yang jelas di balik pergerakan ini.",
     "Yang penting: volume konfirmasi ada. Hari ini {ratio:.1f}x di atas rata-rata, artinya gerakan ini bukan sekadar noise.",
     "Volume melonjak ke {ratio:.1f}x rata-rata. Kalau ada satu hal yang bikin teknikal lebih terpercaya, itu volume yang mendukung.",
 ]

@@ -127,6 +127,15 @@ class RunLogsRepo:
             log.error("db_update_run_failed", run_id=run_id, error=str(e))
             raise DatabaseUpdateError(f"Failed to update run log {run_id}") from e
 
+    def get_run(self, run_id: str) -> dict | None:
+        """Get a single run log by ID."""
+        try:
+            resp = self._client.table(self._table).select("*").eq("id", run_id).execute()
+            return resp.data[0] if resp.data else None
+        except Exception as e:
+            log.error("db_get_run_failed", run_id=run_id, error=str(e))
+            return None
+
     def cleanup_old_logs(self, retention_days: int = 180) -> int:
         """Delete run logs older than retention_days."""
         cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=retention_days)).isoformat()

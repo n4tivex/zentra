@@ -271,7 +271,7 @@ def format_failure_message(date_str: str, reason_code: str, detail: str = "") ->
     }
     label = reason_labels.get(reason_code, "Scan gagal")
     lines = [
-        f"ðŸ“Š *Daily Scan â€” {esc(date_str)}*",
+        f"📊 *Daily Scan — {esc(date_str)}*",
         "",
         esc(label),
     ]

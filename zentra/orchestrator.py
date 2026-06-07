@@ -224,6 +224,7 @@ class ZENTRAOrchestrator:
                     run_date=self._today,
                     slot=self._run_slot,
                     run_id=run_id,
+                    run_logs_repo=run_logs_repo,
                 )
             except Exception as e:
                 run_log.error("run_lock_acquire_failed", phase="lock", error=str(e))
@@ -425,48 +426,6 @@ class ZENTRAOrchestrator:
                 missing_tickers=coverage.missing_tickers,
             )
 
-        # Midday and closing scans should not run on stale data.
-        # If the calendar says today is a trading day but the latest candle is still
-        # behind today's expected close, this is a data freshness problem, not a holiday.
-        if self._mode in {"closing", "midday"}:
-            latest_trade_date = None
-            for df in all_data.values():
-                if df is None or df.empty:
-                    continue
-                candidate = pd.Timestamp(df.index[-1]).date()
-                if latest_trade_date is None or candidate > latest_trade_date:
-                    latest_trade_date = candidate
-
-            expected_trade_date = self._market_calendar.expected_last_trade_day(today_jakarta(), mode=self._mode)
-            if latest_trade_date is not None and latest_trade_date < expected_trade_date:
-                run_log.warning(
-                    "market_data_pending",
-                    phase="market_check",
-                    latest_trade_date=str(latest_trade_date),
-                    expected_trade_date=str(expected_trade_date),
-                )
-                if sender:
-                    try:
-                        await sender.send_admin_alert(
-                            escape_markdown_v2(
-                                f"⚠️ MARKET DATA PENDING\n"
-                                f"Mode: {self._mode}\n"
-                                f"Date: {self._today}\n"
-                                f"Latest trade date: {latest_trade_date}\n"
-                                f"Expected trade date: {expected_trade_date}"
-                            )
-                        )
-                    except Exception:
-                        run_log.warning("admin_alert_failed_on_market_data_pending", phase="notify")
-                if run_logs_repo and run_id:
-                    run_logs_repo.update_run(
-                        run_id,
-                        status=RunStatus.FAILED.value,
-                        error_message=f"Market data pending: latest={latest_trade_date}, expected={expected_trade_date}",
-                        duration_seconds=time.time() - start_time,
-                    )
-                return False
-
         # --- Phase: Process tickers (validate, enrich, score) ---
         validator = DataValidator()
         indicators = TechnicalIndicators()
@@ -499,8 +458,6 @@ class ZENTRAOrchestrator:
                 if result.get("status") == "failed":
                     failed_tickers.append(ticker)
                 skipped.append(result)
-            elif isinstance(result, list):
-                all_signals.extend(result)
             elif isinstance(result, SignalResult):
                 all_signals.append(result)
 
@@ -760,11 +717,11 @@ class ZENTRAOrchestrator:
         signals_repo: SignalsRepo | None,
         ohlcv_repo: OHLCVRepo | None,
         ticker_log,
-    ) -> SignalResult | list[SignalResult] | dict[str, str] | None:
+    ) -> SignalResult | dict[str, str] | None:
         """Process a single ticker through the full pipeline.
 
         Returns:
-            SignalResult or list of them on success,
+            SignalResult on success,
             dict with skip/fail info,
             None if nothing to report.
         """
@@ -963,13 +920,24 @@ class ZENTRAOrchestrator:
                     run_log.error("persist_signal_failed", phase="persist", ticker=sig.ticker, error=str(e))
                     persistence_failures.append(f"create_signal:{sig.ticker}:{e}")
 
-        # WATCH signals — transparent to channel, NOT persisted to DB
-        # Dedup within same run: only one WATCH per ticker per run
+        # WATCH signals — persisted for cross-run dedup (TTL: 1 day via expire)
         seen_watch_tickers: set[str] = set()
         for sig in watch_signals:
             if sig.ticker in seen_watch_tickers:
                 continue
             seen_watch_tickers.add(sig.ticker)
+
+            # Cross-run dedup: skip if already sent today
+            if signals_repo and signals_repo.watch_exists_today(sig.ticker):
+                continue
+
+            # Persist so subsequent scans today skip this ticker
+            if signals_repo and run_id:
+                try:
+                    signals_repo.create_signal(sig, run_id=run_id)
+                except Exception as e:
+                    run_log.warning("watch_persist_failed", phase="persist", ticker=sig.ticker, error=str(e))
+
             messages.append(format_watch_message(sig))
             signal_lines.append(f"👁 WATCH {sig.ticker} (skor: {sig.score})")
 
@@ -990,6 +958,7 @@ class ZENTRAOrchestrator:
     async def run_weekly_report(self) -> bool:
         """Generate and send weekly performance report."""
         run_log = log.bind(mode="weekly", run_date=self._today)
+        start_time = datetime.now(tz=timezone.utc)
 
         if not self._dry_run:
             try:
@@ -1001,6 +970,8 @@ class ZENTRAOrchestrator:
         if not self._dry_run:
             db = get_client()
             signals_repo = SignalsRepo(db)
+            run_logs_repo = RunLogsRepo(db)
+            run_id = run_logs_repo.create_run("weekly", run_slot="weekly_report")
             sender = TelegramSender(
                 bot_token=get_env("TELEGRAM_BOT_TOKEN"),
                 chat_id=get_env("TELEGRAM_CHAT_ID"),
@@ -1065,5 +1036,11 @@ class ZENTRAOrchestrator:
         )
 
         success = await sender.send_signal(message)
+        if not self._dry_run:
+            run_logs_repo.update_run(
+                run_id,
+                status=RunStatus.COMPLETED if success else RunStatus.FAILED,
+                duration_seconds=(datetime.now(tz=timezone.utc) - start_time).total_seconds(),
+            )
         run_log.info("weekly_report_sent", success=success, total_closed=total_closed)
         return success

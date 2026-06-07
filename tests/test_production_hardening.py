@@ -80,7 +80,7 @@ class TestSignalIdempotency:
                 super().__init__(mock_client)
                 self.calls = 0
 
-            def get_active_signal(self, ticker: str):
+            def get_active_signal(self, ticker: str, signal_type: str | None = "BUY"):
                 self.calls += 1
                 return None if self.calls == 1 else existing
 
@@ -102,7 +102,7 @@ class TestSignalIdempotency:
         )
 
         class Repo(SignalsRepo):
-            def get_active_signal(self, ticker: str):
+            def get_active_signal(self, ticker: str, signal_type: str | None = "BUY"):
                 return None
 
         repo = Repo(client)
@@ -142,9 +142,9 @@ class TestSignalIdempotency:
 
     def test_expiry_zero_row_update_is_idempotent(self):
         client = MagicMock()
-        select_resp = MagicMock(data=[{"id": "sig-1", "created_at": "2026-01-01T00:00:00+00:00"}])
+        select_resp = MagicMock(data=[{"id": "sig-1", "created_at": "2026-01-01T00:00:00+00:00", "signal_type": "BUY"}])
         update_resp = MagicMock(data=[])
-        client.table.return_value.select.return_value.eq.return_value.lt.return_value.execute.return_value = select_resp
+        client.table.return_value.select.return_value.eq.return_value.execute.return_value = select_resp
         client.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value = update_resp
         repo = SignalsRepo(client)
 
