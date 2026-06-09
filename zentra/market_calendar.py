@@ -223,7 +223,7 @@ class MarketCalendar:
         """Return the trading day whose candle should be available for the mode."""
         value = today_jakarta() if value is None else value
         value = _coerce_date(value)
-        if mode in {"closing", "midday"}:
+        if mode == "closing":
             return value
         return self.previous_trading_day(value)
 

@@ -6,7 +6,7 @@ ZENTRA is not a trading bot. It is a decision-support system and does not execut
 
 ## Features
 
-- Daily automated scans at 08:45, 13:00, and 16:45 WIB.
+- Daily automated scans at 08:45 and 16:45 WIB.
 - RSI crossing is the primary BUY trigger, with MACD as confirmation.
 - EMA 9/21 trend scoring and 5-day volume confirmation.
 - Stop-loss distance is capped at 5%.
@@ -21,7 +21,6 @@ ZENTRA is not a trading bot. It is a decision-support system and does not execut
 pip install -r requirements.txt
 
 python main.py --mode morning --dry-run
-python main.py --mode midday --dry-run
 python main.py --mode closing --dry-run
 python main.py --mode morning --dry-run --ticker BBCA
 ```
@@ -38,15 +37,12 @@ The full preflight requires valid Supabase and Telegram environment variables.
 
 ## Production Scheduling
 
-Production scan workflows are triggered by cronjob.org through GitHub `repository_dispatch` events. Keep all three daily scan triggers active:
+Production scan workflows are triggered by cronjob.org through GitHub `repository_dispatch` events. Keep both daily scan triggers active:
 
 | Scan | WIB time | GitHub dispatch event | CLI mode |
 |------|----------|-----------------------|----------|
 | Morning | 08:45 | `trigger-morning-scan` | `morning` |
-| Midday | 13:00 | `trigger-midday-scan` | `midday` |
 | Closing | 16:45 | `trigger-closing-scan` | `closing` |
-
-The midday scan is intentionally scheduled after IDX session 1 so session 1 changes can be acted on before session 2.
 
 ## Required Secrets
 
@@ -90,10 +86,10 @@ supabase/migrations/
   20260512_0001_zentra_p0.sql
   20260512_0002_zentra_p1_p2.sql
   20260518_0003_production_hardening.sql
-  20260603_0004_add_midday_run_mode.sql
+  20260609_0005_remove_midday_run_mode.sql
 .github/workflows/
   morning_scan.yml
-  midday_scan.yml
+  morning_scan.yml
   closing_scan.yml
   weekly_report.yml
   monthly_cleanup.yml
@@ -103,7 +99,7 @@ docs/runbook.md                 Operational runbook
 
 ## Supabase Migration
 
-Apply all migrations before enabling the new midday trigger. The migration `20260603_0004_add_midday_run_mode.sql` updates the `run_logs.run_mode` constraint so Supabase accepts `midday` runs.
+Apply migrations in order before deploying to production.
 
 ## Operations
 

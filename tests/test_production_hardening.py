@@ -221,19 +221,6 @@ class TestReadinessAndValidation:
         assert latest == date(2026, 5, 13)
         assert expected == date(2026, 5, 18)
 
-    def test_midday_previous_trading_day_is_market_data_pending(self, bullish_df):
-        orchestrator = ZENTRAOrchestrator(mode="midday", dry_run=True)
-        df = bullish_df.copy()
-        df.index = pd.date_range("2026-03-23", periods=len(df), freq="B")
-        df.index = df.index[:-1].append(pd.DatetimeIndex(["2026-05-13"]))
-
-        with patch("zentra.orchestrator.today_jakarta", return_value=date(2026, 5, 18)):
-            status, latest, expected = orchestrator._data_readiness_status({"BBCA": df})
-
-        assert status == "market_data_pending"
-        assert latest == date(2026, 5, 13)
-        assert expected == date(2026, 5, 18)
-
     def test_morning_older_than_expected_is_provider_stale(self, bullish_df):
         orchestrator = ZENTRAOrchestrator(mode="morning", dry_run=True)
         df = bullish_df.copy()

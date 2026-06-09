@@ -23,7 +23,6 @@ class TestMarketCalendar:
     def test_expected_trade_day_matches_mode(self):
         calendar = MarketCalendar.from_env()
         assert calendar.expected_last_trade_day(date(2026, 5, 18), mode="morning") == date(2026, 5, 13)
-        assert calendar.expected_last_trade_day(date(2026, 5, 18), mode="midday") == date(2026, 5, 18)
         assert calendar.expected_last_trade_day(date(2026, 5, 18), mode="closing") == date(2026, 5, 18)
 
     def test_weekend_reason_code(self):

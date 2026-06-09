@@ -40,7 +40,6 @@ class SignalStatus(str, Enum):
 
 class RunMode(str, Enum):
     MORNING = "morning"
-    MIDDAY = "midday"
     CLOSING = "closing"
     MANUAL = "manual"
 

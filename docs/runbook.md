@@ -16,7 +16,7 @@
 
 ## Market Data Pending Or Provider Stale
 
-- `market_data_pending`: midday/closing scan expected today's candle, but the provider still shows the previous trading day.
+- `market_data_pending`: closing scan expected today's candle, but the provider still shows the previous trading day.
 - `provider_stale`: latest available candle is older than the expected trading day.
 - Do not classify either case as a holiday. Wait for provider recovery, then rerun the same slot manually if needed.
 
@@ -35,10 +35,6 @@
 ## cronjob.org Triggers
 
 - Keep existing morning and closing jobs active.
-- Add a midday job at 13:00 WIB.
-- The midday job must dispatch GitHub event type `trigger-midday-scan`.
-- The midday GitHub workflow runs `python main.py --mode midday`.
-- Confirm the Supabase migration allowing `run_mode='midday'` has been applied before enabling the cronjob.
 
 ## Telegram Failure
 

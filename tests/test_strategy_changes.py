@@ -122,12 +122,6 @@ def test_macd_confirmation_without_rsi_crossing_cannot_create_buy() -> None:
     assert result.reason == "rsi_not_crossed"
 
 
-def test_midday_expects_current_trading_day() -> None:
-    calendar = MarketCalendar()
-
-    assert calendar.expected_last_trade_day(date(2026, 5, 18), mode="midday") == date(2026, 5, 18)
-
-
 def test_stop_loss_is_capped_at_5_percent() -> None:
     result = RiskCalculator().calculate(entry_price=1000.0, atr=100.0)
 

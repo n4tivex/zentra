@@ -32,7 +32,7 @@ class RunLocksRepo:
 
         Two layers of protection:
         1. Recent lock check — prevents sequential duplicates within N hours
-           (e.g. cronjob.org triggering midday 4× in one hour).
+           (e.g. cronjob.org triggering the same scan 4× in one hour).
         2. Unique constraint — prevents truly concurrent runs.
 
         If run_logs_repo is provided, Layer 1 checks if the previous run FAILED.
