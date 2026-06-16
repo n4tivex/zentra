@@ -286,8 +286,9 @@ class ZENTRAOrchestrator:
         market_status = self._market_calendar.closure_reason(today_jakarta())
         if market_status == "weekend":
             run_log.info("market_closed_weekend", phase="market_check")
+            sent_ok = False
             if sender:
-                await sender.send_signal(MARKET_CLOSED_WEEKEND)
+                sent_ok = await sender.send_signal(MARKET_CLOSED_WEEKEND)
             updated = await self._update_run_log(
                 run_logs_repo,
                 run_id,
@@ -295,6 +296,7 @@ class ZENTRAOrchestrator:
                 sender,
                 status=RunStatus.SUCCESS.value,
                 duration_seconds=0,
+                telegram_sent=1 if sent_ok else 0,
                 calendar_reason=market_status,
                 data_readiness_status="market_closed",
             )
@@ -302,8 +304,9 @@ class ZENTRAOrchestrator:
             return updated and released
         if market_status in {"official_holiday", "calendar_override"}:
             run_log.info(f"market_closed_{market_status}", phase="market_check")
+            sent_ok = False
             if sender:
-                await sender.send_signal(MARKET_CLOSED_HOLIDAY)
+                sent_ok = await sender.send_signal(MARKET_CLOSED_HOLIDAY)
             updated = await self._update_run_log(
                 run_logs_repo,
                 run_id,
@@ -311,6 +314,7 @@ class ZENTRAOrchestrator:
                 sender,
                 status=RunStatus.SUCCESS.value,
                 duration_seconds=0,
+                telegram_sent=1 if sent_ok else 0,
                 calendar_reason=market_status,
                 data_readiness_status="market_closed",
             )
@@ -985,6 +989,12 @@ class ZENTRAOrchestrator:
             active_count = signals_repo.get_active_signals_count()
         except Exception as e:
             run_log.error("weekly_report_db_failed", error=str(e))
+            run_logs_repo.update_run(
+                run_id,
+                status=RunStatus.FAILED,
+                duration_seconds=(datetime.now(tz=timezone.utc) - start_time).total_seconds(),
+                error_message=str(e),
+            )
             return False
 
         # Filter to last 7 days
@@ -1002,6 +1012,11 @@ class ZENTRAOrchestrator:
 
         if not recent:
             run_log.info("weekly_report_no_closed_signals")
+            run_logs_repo.update_run(
+                run_id,
+                status=RunStatus.COMPLETED,
+                duration_seconds=(datetime.now(tz=timezone.utc) - start_time).total_seconds(),
+            )
             return True
 
         # Calculate metrics

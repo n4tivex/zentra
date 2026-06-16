@@ -9,7 +9,7 @@ import asyncio
 
 import structlog
 from telegram import Bot
-from telegram.error import RetryAfter, TimedOut, NetworkError
+from telegram.error import RetryAfter, NetworkError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 log = structlog.get_logger()
@@ -56,7 +56,7 @@ class TelegramSender:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=2, max=8),
-        retry=retry_if_exception_type((TimedOut, NetworkError, OSError, ConnectionError, RetryAfter)),
+        retry=retry_if_exception_type((NetworkError, OSError, ConnectionError, RetryAfter)),
         reraise=True,
     )
     async def _send_with_retry(self, chat_id: str, message: str) -> None:
@@ -70,4 +70,4 @@ class TelegramSender:
         except RetryAfter as e:
             log.warning("telegram_rate_limited", retry_after=e.retry_after)
             await asyncio.sleep(e.retry_after)
-            raise TimedOut("Rate limited, retrying") from e
+            raise
