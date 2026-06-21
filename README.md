@@ -89,7 +89,6 @@ supabase/migrations/
   20260609_0005_remove_midday_run_mode.sql
 .github/workflows/
   morning_scan.yml
-  morning_scan.yml
   closing_scan.yml
   weekly_report.yml
   monthly_cleanup.yml
