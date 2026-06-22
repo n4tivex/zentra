@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pandas as pd
 import structlog
 
@@ -211,6 +213,7 @@ class SignalScorer:
             rsi_crossed_up=rsi_crossed_up,
             macd_confirmed=macd_confirmed,
         )
+        now = datetime.now(tz=timezone.utc)
         result = SignalResult(
             ticker=ticker,
             signal_type=signal_type,
@@ -219,7 +222,13 @@ class SignalScorer:
             indicator_snapshot=snapshot,
             reason=reason,
             signal_strength=signal_strength,
+            created_at=now.isoformat(),
         )
+
+        if signal_type == SignalType.BUY:
+            result.expires_at = (now + timedelta(days=SCORING.SIGNAL_EXPIRY_DAYS)).isoformat()
+        elif signal_type == SignalType.WATCH:
+            result.expires_at = (now + timedelta(days=1)).isoformat()
 
         if risk_levels and signal_type in (SignalType.BUY, SignalType.WATCH):
             result.entry_price = risk_levels.entry
@@ -318,6 +327,7 @@ class SignalScorer:
             reason=exit_reasons[0],
             risk_pct=round(abs(exit_pct), 2) if exit_pct < 0 else None,
             reward_pct=round(exit_pct, 2) if exit_pct >= 0 else None,
+            created_at=datetime.now(tz=timezone.utc).isoformat(),
         )
 
     def _classify(

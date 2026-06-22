@@ -7,9 +7,11 @@ Production-grade signal formatting — no branding, no fluff.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
-from zentra.config import SignalResult, SignalStrength, TICKER_NAMES
+from zentra.config import SignalResult, SignalStrength, SignalStatus, TICKER_NAMES
+
+WIB = timezone(timedelta(hours=7))
 
 
 def escape_markdown_v2(text: str) -> str:
@@ -40,6 +42,13 @@ def _pct_str(value: float) -> str:
     return f"{value:.1f}%"
 
 
+def _pct_str_human(value: float) -> str:
+    """Format a percentage for signal_lines (compact)."""
+    if value >= 0:
+        return f"+{value:.1f}%"
+    return f"{value:.1f}%"
+
+
 def _strength_label(strength: SignalStrength) -> str:
     """Map signal strength to a concise label."""
     if strength == SignalStrength.STRONG:
@@ -49,11 +58,65 @@ def _strength_label(strength: SignalStrength) -> str:
     return ""
 
 
-def format_buy_message(result: SignalResult) -> str:
-    """Format a BUY signal as Telegram MarkdownV2 message.
+def _format_wib(iso_str: str) -> str:
+    """Format ISO timestamp to WIB date + time."""
+    if not iso_str:
+        return "N/A"
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        wib = dt.astimezone(WIB)
+        return wib.strftime("%d %b %Y \u00b7 %H:%M WIB")
+    except (ValueError, TypeError):
+        return iso_str
 
-    Dynamic layout — sections adapt based on available data.
-    """
+
+def _format_wib_date(iso_str: str) -> str:
+    """Format ISO timestamp to WIB date only."""
+    if not iso_str:
+        return "N/A"
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        wib = dt.astimezone(WIB)
+        return wib.strftime("%d %b %Y")
+    except (ValueError, TypeError):
+        return iso_str
+
+
+def _reason_label(reason: str | None) -> str:
+    """Map classify reason to user-facing label."""
+    labels = {
+        "rsi_not_crossed": "RSI belum crossing 50, momentum belum terkonfirmasi",
+        "macd_not_confirmed": "MACD belum golden cross, konfirmasi masih kurang",
+        "watch_signal": "Skor di ambang WATCH tapi belum cukup untuk BUY",
+    }
+    return labels.get(reason or "", "Menunggu konfirmasi tambahan")
+
+
+def _build_indicator_footer(snap: dict, confluence: int, score: int) -> str:
+    """Build dynamic indicator snapshot footer line."""
+    esc = escape_markdown_v2
+    rsi = snap.get("rsi_14", 0)
+    vol_ratio = snap.get("volume_ratio", 0)
+    bb_pct = snap.get("bb_percent", 0)
+
+    parts = []
+    if rsi:
+        parts.append(f"RSI {rsi:.0f}")
+    if vol_ratio:
+        parts.append(f"Vol {vol_ratio:.1f}x")
+    if bb_pct is not None and bb_pct > 0:
+        parts.append(f"BB% {bb_pct:.0%}")
+
+    line = f"CF {confluence}/5 \u00b7 Skor {score}/100"
+    if parts:
+        line = f"{' \u00b7 '.join(parts)} \u00b7 {line}"
+
+    return f"_📊 {esc(line)}_"
+
+
+def format_buy_message(result: SignalResult) -> str:
+    """Format a BUY signal — date, conviction, narrative, trading plan."""
+    esc = escape_markdown_v2
     ticker = result.ticker
     name = TICKER_NAMES.get(ticker, ticker)
     narrative = result.narrative or ""
@@ -68,7 +131,6 @@ def format_buy_message(result: SignalResult) -> str:
     score = result.score
     confluence = result.confluence_count
 
-    # Dynamic hold estimate from ATR
     atr = snap.get("atr_14", 0)
     close = snap.get("close", 0)
     if atr and close and result.take_profit:
@@ -80,64 +142,44 @@ def format_buy_message(result: SignalResult) -> str:
     else:
         days_min, days_max = 3, 7
 
-    esc = escape_markdown_v2
-
-    # Build header
     strength_tag = _strength_label(result.signal_strength)
     header = "🟢 *BUY SIGNAL*"
     if strength_tag:
-        header += f" — {esc(strength_tag)}"
+        header += f" \u2014 {esc(strength_tag)}"
 
-    # Calculate buy zone based on ATR (volatility-adjusted entry window)
     if atr and result.entry_price:
         zone_low = int(result.entry_price - atr * 0.3)
         zone_high = int(result.entry_price + atr * 0.5)
-        buy_zone_str = f"{esc(format_rupiah(zone_low))} – {esc(format_rupiah(zone_high))}"
+        buy_zone_str = f"{esc(format_rupiah(zone_low))} \u2013 {esc(format_rupiah(zone_high))}"
     else:
         buy_zone_str = None
 
     lines = [
         header,
-        f"*${esc(ticker)}* — {esc(name)}",
+        f"*\\${esc(ticker)}* \u2014 {esc(name)}",
+        "",
+        f"📅 {esc(_format_wib(result.created_at))}" if result.created_at else None,
+        f"⚠️ {esc('Akan expired otomatis jika tidak ada EXIT dalam 10 hari')}",
         "",
         esc(narrative),
         "",
-        "─── *Rencana Trading* ───",
-        f"▸ Entry: *{esc(entry)}*",
-        f"▸ Buy Zone: *{buy_zone_str}*" if buy_zone_str else None,
-        f"▸ Target: *{esc(tp)}* \\(\\+{esc(f'{reward_pct:.1f}')}%\\)",
-        f"▸ Stop Loss: *{esc(sl)}* \\(\\-{esc(f'{risk_pct:.1f}')}%\\)",
-        f"▸ Risk/Reward: *1:{esc(f'{rr:.1f}')}*",
-        f"▸ Estimasi hold: *{days_min}–{days_max} hari*",
+        "\u2500\u2500\u2500 *Rencana Trading* \u2500\u2500\u2500",
+        f"\u25b8 Entry: *{esc(entry)}*",
+        f"\u25b8 Buy Zone: *{buy_zone_str}*" if buy_zone_str else None,
+        f"\u25b8 Target: *{esc(tp)}* \\(\\+{esc(f'{reward_pct:.1f}')}%\\)",
+        f"\u25b8 Stop Loss: *{esc(sl)}* \\(\\-{esc(f'{risk_pct:.1f}')}%\\)",
+        f"\u25b8 Risk/Reward: *1:{esc(f'{rr:.1f}')}*",
+        f"\u25b8 Estimasi hold: *{days_min}\u2013{days_max} hari*",
         "",
     ]
 
-    # Dynamic indicator snapshot
-    rsi = snap.get("rsi_14", 0)
-    vol_ratio = snap.get("volume_ratio", 0)
-    bb_pct = snap.get("bb_percent", 0)
-
-    indicator_parts = []
-    if rsi:
-        indicator_parts.append(f"RSI {rsi:.0f}")
-    if vol_ratio:
-        indicator_parts.append(f"Vol {vol_ratio:.1f}x")
-    if bb_pct is not None and bb_pct > 0:
-        indicator_parts.append(f"BB% {bb_pct:.0%}")
-
-    if indicator_parts:
-        lines.append(f"_📊 {esc(' · '.join(indicator_parts))} · Confluence {confluence}/5 · Skor {score}/100_")
-    else:
-        lines.append(f"_📊 Confluence {confluence}/5 · Skor {score}/100_")
+    lines.append(_build_indicator_footer(snap, confluence, score))
 
     return "\n".join(line for line in lines if line is not None)
 
 
 def format_exit_message(result: SignalResult, active_signal: dict) -> str:
-    """Format an EXIT signal as Telegram MarkdownV2 message.
-
-    Dynamic P&L calculation and reason formatting.
-    """
+    """Format an EXIT signal — dates, P&L, reasons."""
     ticker = result.ticker
     name = TICKER_NAMES.get(ticker, ticker)
     narrative = result.narrative or ""
@@ -147,78 +189,75 @@ def format_exit_message(result: SignalResult, active_signal: dict) -> str:
     entry = active_signal.get("entry_price", 0)
     exit_reasons = result.exit_reasons or []
     primary_reason = result.reason or "Technical reversal"
+    entry_created = active_signal.get("created_at", "")
 
     esc = escape_markdown_v2
 
-    # Determine header icon based on outcome
     if entry and close:
         pct = (close - entry) / entry * 100
         if pct >= 0:
             emoji = "🟡"
             pct_str = f"\\+{esc(f'{pct:.1f}')}%"
-            outcome = "PROFIT"
         else:
             emoji = "🔴"
             pct_str = f"{esc(f'{pct:.1f}')}%"
-            outcome = "LOSS"
     else:
         emoji = "🔴"
         pct = 0
         pct_str = "N/A"
-        outcome = "EXIT"
 
-    # Determine exit type label
-    from zentra.config import SignalStatus
     exit_type_map = {
-        SignalStatus.CLOSED_TP: "TARGET TERCAPAI ✅",
-        SignalStatus.CLOSED_SL: "STOP LOSS ❌",
+        SignalStatus.CLOSED_TP: "TARGET TERCAPAI \u2705",
+        SignalStatus.CLOSED_SL: "STOP LOSS \u274c",
         SignalStatus.CLOSED_EXIT_SIGNAL: "SINYAL EXIT",
     }
     exit_label = exit_type_map.get(result.exit_status, "EXIT")
 
-    # Calculate days held
-    created_str = active_signal.get("created_at", "")
     days_held = ""
-    if created_str:
+    if entry_created and result.created_at:
         try:
-            created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-            held = (datetime.now(tz=created.tzinfo) - created).days
-            days_held = f" · {held} hari"
+            created = datetime.fromisoformat(entry_created.replace("Z", "+00:00"))
+            exited = datetime.fromisoformat(result.created_at.replace("Z", "+00:00"))
+            held = max(0, (exited - created).days)
+            days_held = f"  \u00b7  {held} hari"
         except (ValueError, TypeError):
             pass
 
     lines = [
-        f"{emoji} *EXIT — {esc(exit_label)}*",
-        f"*${esc(ticker)}* — {esc(name)}",
+        f"{emoji} *EXIT \u2014 {esc(exit_label)}*",
+        f"*\\${esc(ticker)}* \u2014 {esc(name)}",
+        "",
+        f"📅 Entry: {esc(_format_wib_date(entry_created))}" if entry_created else None,
+        f"📅 Exit: {esc(_format_wib_date(result.created_at))}" if result.created_at else None,
+        f"\\u23f1 Hold:{esc(days_held)}" if days_held else None,
         "",
         esc(narrative),
         "",
-        "─── *Detail Exit* ───",
-        f"▸ Entry: *{esc(format_rupiah(entry))}*" if entry else None,
-        f"▸ Exit: *{esc(format_rupiah(close))}*" if close else None,
-        f"▸ P&L: *{pct_str}*{esc(days_held)}",
+        "\u2500\u2500\u2500 *Detail Exit* \u2500\u2500\u2500",
+        f"\u25b8 Entry: *{esc(format_rupiah(entry))}*" if entry else None,
+        f"\u25b8 Exit: *{esc(format_rupiah(close))}*" if close else None,
+        f"\u25b8 P&L: *{pct_str}*",
         "",
     ]
 
-    # Reasons list (dynamic)
     if len(exit_reasons) > 1:
-        lines.append(f"_Alasan: {esc(', '.join(exit_reasons[:3]))}_")
+        lines.append(f"_📋 Alasan: {esc(', '.join(exit_reasons[:3]))}_")
     elif exit_reasons:
-        lines.append(f"_Alasan: {esc(exit_reasons[0])}_")
+        lines.append(f"_📋 Alasan: {esc(exit_reasons[0])}_")
 
     return "\n".join(line for line in lines if line is not None)
 
 
 def format_watch_message(result: SignalResult) -> str:
-    """Format a WATCH alert for admin — concise info-only."""
+    """Format a WATCH signal — date, indicators, reason, expiry."""
+    esc = escape_markdown_v2
     ticker = result.ticker
     name = TICKER_NAMES.get(ticker, ticker)
+    snap = result.indicator_snapshot or {}
     score = result.score
     confluence = result.confluence_count
-    snap = result.indicator_snapshot or {}
-    esc = escape_markdown_v2
+    reason = result.reason
 
-    # Compact indicator line
     rsi = snap.get("rsi_14", 0)
     vol_ratio = snap.get("volume_ratio", 0)
     details = []
@@ -226,14 +265,56 @@ def format_watch_message(result: SignalResult) -> str:
         details.append(f"RSI {rsi:.0f}")
     if vol_ratio:
         details.append(f"Vol {vol_ratio:.1f}x")
-    detail_str = f" · {' · '.join(details)}" if details else ""
+    detail_str = f" \u00b7 {' \u00b7 '.join(details)}" if details else ""
 
     lines = [
-        f"👁 *WATCHLIST* — ${esc(ticker)}",
-        f"{esc(name)} · Skor {score}/100 · Confluence {confluence}/5{esc(detail_str)}",
-        f"_Belum cukup kuat untuk entry — pantau perkembangan_",
+        f"\U0001f441 *WATCHLIST \u2014 \\${esc(ticker)}*",
+        esc(name),
+        "",
+        f"📅 {esc(_format_wib(result.created_at))}" if result.created_at else None,
+        f"📊 Skor {score}/100 \u00b7 CF {confluence}/5{esc(detail_str)}",
+        "",
+        f"📋 Status: WATCH \u2014 {esc(_reason_label(reason))}",
+        f"⏰ Auto-expire: {esc(_format_wib(result.expires_at))}" if result.expires_at else None,
+        "",
+        f"_{esc('Belum cukup kuat untuk entry \u2014 pantau perkembangan')}_",
     ]
-    return "\n".join(lines)
+    return "\n".join(line for line in lines if line is not None)
+
+
+def format_expired_message(record: dict) -> str:
+    """Format an expired signal — type, dates, explanation."""
+    esc = escape_markdown_v2
+    ticker = record.get("ticker", "?")
+    signal_type = record.get("signal_type", "BUY")
+    created_at_str = record.get("created_at", "")
+    name = TICKER_NAMES.get(ticker, ticker)
+
+    days = 0
+    if created_at_str:
+        try:
+            created = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+            days = (datetime.now(tz=timezone.utc) - created).days
+        except (ValueError, TypeError):
+            pass
+
+    if signal_type == "WATCH":
+        explanation = "Sinyal WATCH ini expired karena masa berlaku 24 jam telah habis."
+        next_step = "Saham akan di-scan ulang di sesi berikutnya."
+    else:
+        explanation = "Sinyal BUY ini expired karena tidak ada kondisi EXIT yang terpenuhi dalam masa berlakunya."
+        next_step = "Cek harga terkini secara manual untuk evaluasi lebih lanjut."
+
+    lines = [
+        f"⏰ *EXPIRED \u2014 {esc(signal_type)} \\${esc(ticker)}*",
+        esc(name),
+        "",
+        f"📅 Aktif: {esc(_format_wib_date(created_at_str))} \u00b7 {days} hari" if created_at_str else None,
+        f"📋 {esc(explanation)}",
+        "",
+        f"_{esc(next_step)}_",
+    ]
+    return "\n".join(line for line in lines if line is not None)
 
 
 def format_daily_summary(
@@ -243,24 +324,25 @@ def format_daily_summary(
     success: int,
     failed: int,
     signal_lines: list[str],
+    mode: str = "",
 ) -> str:
-    """Format daily summary message."""
+    """Format daily scan summary with results list."""
     esc = escape_markdown_v2
     signals = "\n".join(esc(s) for s in signal_lines) if signal_lines else "Tidak ada sinyal"
+    mode_tag = f" {esc(mode.upper())}" if mode else ""
 
     lines = [
-        f"📊 *Daily Scan — {esc(date_str)}*",
+        f"📊 *Daily Scan{esc(mode_tag)} \u2014 {esc(date_str)}*",
         "",
-        f"{total} ticker dianalisis · {success} berhasil · {failed} gagal",
-        f"Durasi: {esc(f'{duration:.1f}')} detik",
+        f"\u2705 {total} ticker \u00b7 {esc(f'{duration:.1f}')} detik",
         "",
         signals,
     ]
-    return "\n".join(lines)
+    return "\n".join(line for line in lines if line is not None)
 
 
 def format_failure_message(date_str: str, reason_code: str, detail: str = "") -> str:
-    """Format a public failure message without implying the wrong root cause."""
+    """Format a public failure message."""
     esc = escape_markdown_v2
     reason_labels = {
         "market_data_pending": "Data pasar belum final",
@@ -271,13 +353,42 @@ def format_failure_message(date_str: str, reason_code: str, detail: str = "") ->
     }
     label = reason_labels.get(reason_code, "Scan gagal")
     lines = [
-        f"📊 *Daily Scan — {esc(date_str)}*",
+        f"📊 *Daily Scan \u2014 {esc(date_str)}*",
         "",
         esc(label),
     ]
     if detail:
         lines.append(esc(detail))
     return "\n".join(lines)
+
+
+def format_no_signal_message(date_str: str, mode: str = "") -> str:
+    """Format no-signal message with date context."""
+    esc = escape_markdown_v2
+    mode_tag = f" {esc(mode.upper())}" if mode else ""
+    return (
+        f"📊 *Daily Scan{esc(mode_tag)} \u2014 {esc(date_str)}*\n\n"
+        f"Tidak ada sinyal yang memenuhi kriteria hari ini\\.\n"
+        f"Semua ticker di bawah ambang batas atau belum menunjukkan setup yang cukup kuat\\.\n\n"
+        f"_{esc('Kadang tidak ada sinyal itu juga sinyal.')}_"
+    )
+
+
+def format_active_positions_message(
+    date_str: str,
+    positions: list[str],
+    mode: str = "",
+) -> str:
+    """Format message showing active positions when no new signals."""
+    esc = escape_markdown_v2
+    mode_tag = f" {esc(mode.upper())}" if mode else ""
+    positions_text = "\n".join(positions)
+    return (
+        f"📊 *Daily Scan{esc(mode_tag)} \u2014 {esc(date_str)}*\n\n"
+        f"Tidak ada sinyal baru hari ini\\.\n\n"
+        f"*📋 Posisi Aktif*\n{positions_text}\n\n"
+        f"_{esc('Exit otomatis akan dikirim jika TP\\/SL tercapai atau sinyal exit terdeteksi.')}_"
+    )
 
 
 def format_weekly_performance_summary(
@@ -290,27 +401,28 @@ def format_weekly_performance_summary(
     top_performers: list[dict],
     active_count: int,
 ) -> str:
-    """Format weekly performance summary message."""
+    """Format weekly performance summary."""
     esc = escape_markdown_v2
 
     lines = [
-        f"📈 *Weekly Performance*",
-        f"\\({esc(date_str)}\\)",
+        f"📈 *Weekly Report \u2014 {esc(date_str)}*",
         "",
-        f"*Win Rate*: {esc(f'{win_rate_pct:.1f}')}% \\({wins}W / {losses}L\\)",
-        f"*Avg Return*: {esc(f'{avg_return_pct:+.2f}')}% per trade",
+        "*Kinerja*",
+        f"\u25b8 Win Rate: *{esc(f'{win_rate_pct:.1f}')}%* \\({wins}W / {losses}L\\)",
+        f"\u25b8 Avg Return: *{esc(f'{avg_return_pct:+.2f}')}%* per trade",
+        f"\u25b8 Total Closed: *{total_closed}* sinyal",
         "",
     ]
 
     if top_performers:
-        lines.append("*Top Performers*:")
+        lines.append("*Top Performers*")
         for idx, p in enumerate(top_performers[:5], 1):
             t = p["ticker"]
-            wr = p["win_rate_pct"]
             ret = p["avg_return_pct"]
-            lines.append(f"{idx}\\. {esc(t)}: {esc(f'{wr:.0f}')}% WR \\({esc(f'{ret:+.1f}')}%\\)")
+            icon = "✅" if ret >= 0 else "❌"
+            lines.append(f"{idx}\\. {esc(t)} \u00b7 {esc(f'{ret:+.1f}')}% {icon}")
         lines.append("")
 
-    lines.append(f"*Sinyal Aktif*: {active_count} ticker")
+    lines.append(f"📡 Sinyal Aktif: *{active_count}* ticker")
 
     return "\n".join(lines)

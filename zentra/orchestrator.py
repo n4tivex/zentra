@@ -41,18 +41,22 @@ from zentra.exceptions import (
     InsufficientDataError,
     StaleDataError,
 )
-from zentra.narrative.blocks import MARKET_CLOSED_HOLIDAY, MARKET_CLOSED_WEEKEND, NO_SIGNAL_MESSAGES
+from zentra.narrative.blocks import MARKET_CLOSED_HOLIDAY, MARKET_CLOSED_WEEKEND
 from zentra.narrative.generator import NarrativeGenerator
 from zentra.market_calendar import MarketCalendar
 from zentra.runtime import today_jakarta
 from zentra.telegram.formatter import (
     escape_markdown_v2,
+    format_active_positions_message,
     format_buy_message,
     format_daily_summary,
     format_exit_message,
+    format_expired_message,
+    format_no_signal_message,
     format_rupiah,
     format_watch_message,
     format_weekly_performance_summary,
+    _pct_str_human,
 )
 from zentra.telegram.sender import TelegramSender
 
@@ -430,6 +434,14 @@ class ZENTRAOrchestrator:
                 missing_tickers=coverage.missing_tickers,
             )
 
+        # --- Phase: Expire old signals before fresh scoring ---
+        expired: list[dict] = []
+        if signals_repo:
+            try:
+                expired = signals_repo.expire_old_signals()
+            except Exception as e:
+                run_log.warning("expire_signals_failed", phase="lifecycle", error=str(e))
+
         # --- Phase: Process tickers (validate, enrich, score) ---
         validator = DataValidator()
         indicators = TechnicalIndicators()
@@ -472,14 +484,6 @@ class ZENTRAOrchestrator:
 
         exit_signals.sort(key=lambda s: s.signal_strength == "STRONG", reverse=True)
         buy_signals.sort(key=lambda s: s.score, reverse=True)
-
-        # --- Phase: Expire old signals ---
-        expired: list[dict] = []
-        if signals_repo:
-            try:
-                expired = signals_repo.expire_old_signals()
-            except Exception as e:
-                run_log.warning("expire_signals_failed", phase="lifecycle", error=str(e))
 
         # --- Phase: Build messages ---
         messages, signal_lines, persistence_failures = self._build_messages(
@@ -552,34 +556,41 @@ class ZENTRAOrchestrator:
                     ep = pos.get("entry_price", 0)
                     tp_val = pos.get("take_profit", 0)
                     sl_val = pos.get("stop_loss", 0)
+                    created_at = pos.get("created_at", "")
 
-                    # Get current price from fetched data
                     current_price = 0
                     ticker_df = all_data.get(t)
                     if ticker_df is not None and not ticker_df.empty:
                         current_price = float(ticker_df.iloc[-1].get("close", 0) or 0)
 
+                    price_info = ""
+                    days_info = ""
                     if current_price and ep:
                         pnl_pct = (current_price - ep) / ep * 100
-                        pnl_str = f"\\+{esc(f'{pnl_pct:.1f}')}%" if pnl_pct >= 0 else f"{esc(f'{pnl_pct:.1f}')}%"
-                        price_info = f" → sekarang {esc(format_rupiah(current_price))} \\({pnl_str}\\)"
-                    else:
-                        price_info = ""
+                        pnl_str = _pct_str_human(pnl_pct)
+                        price_info = f" \u2192 {esc(format_rupiah(current_price))} \\({esc(pnl_str)}\\)"
+                    if created_at:
+                        try:
+                            created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                            held = (datetime.now(tz=timezone.utc) - created_dt).days
+                            days_info = f" \u00b7 {held} hari"
+                        except (ValueError, TypeError):
+                            pass
 
                     pos_lines.append(
-                        f"▸ *${esc(t)}*: entry {esc(format_rupiah(ep))}{price_info}\n"
-                        f"  TP {esc(format_rupiah(tp_val))} / SL {esc(format_rupiah(sl_val))}"
+                        f"\u25b8 *\\${esc(t)}*: Entry {esc(format_rupiah(ep))}{esc(price_info)}{esc(days_info)}"
                     )
-                positions_text = "\n".join(pos_lines)
+
                 messages.append(
-                    f"📊 *Daily Scan — {esc(self._today)}*\n\n"
-                    f"Tidak ada sinyal baru hari ini\\.\n\n"
-                    f"*Posisi aktif yang sedang dimonitor:*\n{positions_text}\n\n"
-                    f"_Exit akan otomatis dikirim jika TP/SL tercapai\\._"
+                    format_active_positions_message(
+                        date_str=self._today,
+                        positions=pos_lines,
+                        mode=self._mode,
+                    )
                 )
             else:
                 run_log.info("no_signal_output", phase="summary")
-                messages.append(random.Random(self._today).choice(NO_SIGNAL_MESSAGES))
+                messages.append(format_no_signal_message(date_str=self._today, mode=self._mode))
 
         duration = time.time() - start_time
         total = len(tickers)
@@ -594,6 +605,7 @@ class ZENTRAOrchestrator:
                     success=success_count,
                     failed=len(failed_tickers),
                     signal_lines=signal_lines,
+                    mode=self._mode,
                 )
             )
 
@@ -776,18 +788,20 @@ class ZENTRAOrchestrator:
                 ticker_log.warning("indicator_schema_failed", phase="enrich", error=str(e))
                 return {"ticker": ticker, "status": "skipped", "reason": "indicator_schema_violation"}
 
-            # 9. Check for active signal (EXIT path)
-            # Only BUY signals are persisted — WATCH signals are info-only
-            active = signals_repo.get_active_signal(ticker) if signals_repo else None
-            if active and active.get("signal_type") == "BUY":
-                return self._handle_exit(
-                    ticker=ticker,
-                    df_ind=df_ind,
-                    active=active,
-                    scorer=scorer,
-                    narrative_gen=narrative_gen,
-                    ticker_log=ticker_log,
-                )
+            # 9. Check for active signal (EXIT path or skip on WATCH)
+            active = signals_repo.get_active_signal(ticker, signal_type=None) if signals_repo else None
+            if active:
+                if active.get("signal_type") == "BUY":
+                    return self._handle_exit(
+                        ticker=ticker,
+                        df_ind=df_ind,
+                        active=active,
+                        scorer=scorer,
+                        narrative_gen=narrative_gen,
+                        ticker_log=ticker_log,
+                    )
+                # WATCH active — skip, avoid duplicate until it expires
+                return None
 
             # 10. Score for BUY
             return self._handle_buy_scoring(
@@ -894,15 +908,20 @@ class ZENTRAOrchestrator:
 
         for sig in exit_signals:
             active = signals_repo.get_active_signal(sig.ticker) if signals_repo else None
+            if active and active.get("created_at"):
+                sig.created_at = active["created_at"]
             messages.append(format_exit_message(sig, active or {}))
-            signal_lines.append(f"🔴 EXIT {sig.ticker}")
+            pnl = ""
+            close = sig.indicator_snapshot.get("close", 0)
+            entry = (active or {}).get("entry_price", 0)
+            if entry and close:
+                p = (close - entry) / entry * 100
+                pnl = f" \u00b7 {_pct_str_human(p)}"
+            signal_lines.append(f"\U0001f534 EXIT {sig.ticker}{pnl}")
 
             if signals_repo and active:
                 close_price = int(sig.indicator_snapshot.get("close", 0))
-
-                # P0-5: Use exit_status from scorer (deterministic priority)
                 status = sig.exit_status or SignalStatus.CLOSED_EXIT_SIGNAL
-
                 try:
                     signals_repo.close_signal(
                         active["id"],
@@ -915,14 +934,16 @@ class ZENTRAOrchestrator:
                     persistence_failures.append(f"close_signal:{sig.ticker}:{e}")
 
         for sig in buy_signals:
-            messages.append(format_buy_message(sig))
-            signal_lines.append(f"🟢 BUY {sig.ticker} (skor: {sig.score})")
             if signals_repo and run_id:
                 try:
-                    signals_repo.create_signal(sig, run_id=run_id)
+                    created = signals_repo.create_signal(sig, run_id=run_id)
+                    if created and created.get("created_at"):
+                        sig.created_at = created["created_at"]
                 except Exception as e:
                     run_log.error("persist_signal_failed", phase="persist", ticker=sig.ticker, error=str(e))
                     persistence_failures.append(f"create_signal:{sig.ticker}:{e}")
+            messages.append(format_buy_message(sig))
+            signal_lines.append(f"\U0001f7e2 BUY {sig.ticker} \u00b7 Skor {sig.score}")
 
         # WATCH signals — persisted for cross-run dedup (TTL: 1 day via expire)
         seen_watch_tickers: set[str] = set()
@@ -931,31 +952,24 @@ class ZENTRAOrchestrator:
                 continue
             seen_watch_tickers.add(sig.ticker)
 
-            # Cross-run dedup: skip if already sent today
             if signals_repo and signals_repo.watch_exists_today(sig.ticker):
                 continue
 
-            # Persist so subsequent scans today skip this ticker
             if signals_repo and run_id:
                 try:
-                    signals_repo.create_signal(sig, run_id=run_id)
+                    created = signals_repo.create_signal(sig, run_id=run_id)
+                    if created and created.get("created_at"):
+                        sig.created_at = created["created_at"]
                 except Exception as e:
                     run_log.warning("watch_persist_failed", phase="persist", ticker=sig.ticker, error=str(e))
 
             messages.append(format_watch_message(sig))
-            signal_lines.append(f"👁 WATCH {sig.ticker} (skor: {sig.score})")
+            signal_lines.append(f"\U0001f441 WATCH {sig.ticker} \u00b7 Skor {sig.score}")
 
-        # Expired signals — transparent to channel
         for exp in expired:
-            exp_ticker = exp.get("ticker", "?")
-            days_active = (
-                datetime.now(tz=timezone.utc)
-                - datetime.fromisoformat(exp["created_at"].replace("Z", "+00:00"))
-            ).days
-            messages.append(
-                escape_markdown_v2(narrative_gen.generate_expired(exp_ticker, days_active))
-            )
-            signal_lines.append(f"⏰ EXPIRED {exp_ticker}")
+            messages.append(format_expired_message(exp))
+            st = exp.get("signal_type", "BUY")
+            signal_lines.append(f"\u23f0 EXP {exp.get('ticker', '?')} \u00b7 {st}")
 
         return messages, signal_lines, persistence_failures
 

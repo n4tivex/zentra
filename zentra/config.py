@@ -117,6 +117,8 @@ class SignalResult:
     signal_strength: SignalStrength = SignalStrength.NORMAL
     exit_reasons: list[str] = field(default_factory=list)
     exit_status: Optional[SignalStatus] = None
+    created_at: Optional[str] = None
+    expires_at: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

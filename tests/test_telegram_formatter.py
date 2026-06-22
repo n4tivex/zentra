@@ -221,7 +221,7 @@ class TestFormatWeeklyPerformance:
             ],
             active_count=2,
         )
-        assert "Weekly Performance" in msg
+        assert "Weekly Report" in msg
         assert "60" in msg  # win rate
         assert "BBCA" in msg
         assert "Sinyal Aktif" in msg
@@ -237,5 +237,5 @@ class TestFormatWeeklyPerformance:
             top_performers=[],
             active_count=0,
         )
-        assert "Weekly Performance" in msg
+        assert "Weekly Report" in msg
         assert "Top Performers" not in msg
