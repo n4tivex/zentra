@@ -229,7 +229,7 @@ def format_exit_message(result: SignalResult, active_signal: dict) -> str:
         "",
         f"📅 Entry: {esc(_format_wib_date(entry_created))}" if entry_created else None,
         f"📅 Exit: {esc(_format_wib_date(result.created_at))}" if result.created_at else None,
-        f"\\u23f1 Hold:{esc(days_held)}" if days_held else None,
+        f"\u23f1 Hold: {esc(days_held)}" if days_held else None,
         "",
         esc(narrative),
         "",
@@ -275,7 +275,7 @@ def format_watch_message(result: SignalResult) -> str:
         f"📊 Skor {score}/100 \u00b7 CF {confluence}/5{esc(detail_str)}",
         "",
         f"📋 Status: WATCH \u2014 {esc(_reason_label(reason))}",
-        f"⏰ Auto-expire: {esc(_format_wib(result.expires_at))}" if result.expires_at else None,
+        f"⏰ Auto\\-expire: {esc(_format_wib(result.expires_at))}" if result.expires_at else None,
         "",
         f"_{esc('Belum cukup kuat untuk entry \u2014 pantau perkembangan')}_",
     ]
