@@ -578,7 +578,7 @@ class ZENTRAOrchestrator:
                             pass
 
                     pos_lines.append(
-                        f"\u25b8 *\\${esc(t)}*: Entry {esc(format_rupiah(ep))}{esc(price_info)}{esc(days_info)}"
+                        f"\u25b8 *\\${esc(t)}*: Entry {esc(format_rupiah(ep))}{price_info}{esc(days_info)}"
                     )
 
                 messages.append(

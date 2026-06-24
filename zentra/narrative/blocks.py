@@ -119,9 +119,9 @@ SETUP_UPPER_HALF: list[str] = [
 
 # 6. Caveat blocks (wajib untuk borderline signals)
 CAVEAT_BLOCKS: list[str] = [
-    "⚠️ _Setup ini borderline — pastikan position sizing konservatif dan stop loss disiplin._",
-    "⚠️ _Ini bukan setup grade A. Hanya masuk kalau kamu nyaman dengan risikonya._",
-    "⚠️ _Skor di ambang batas — pertimbangkan untuk tunggu konfirmasi tambahan sebelum entry._",
+    "⚠️ Setup ini borderline — pastikan position sizing konservatif dan stop loss disiplin.",
+    "⚠️ Ini bukan setup grade A. Hanya masuk kalau kamu nyaman dengan risikonya.",
+    "⚠️ Skor di ambang batas — pertimbangkan untuk tunggu konfirmasi tambahan sebelum entry.",
 ]
 
 
@@ -172,15 +172,15 @@ EXIT_REASON_SCORE_DROP: list[str] = [
 ]
 
 GAIN_LINE_PROFIT: list[str] = [
-    "📈 Estimasi profit: *+{pct:.1f}%* dari entry",
-    "📈 Dari harga entry, posisi ini masih hijau *+{pct:.1f}%*",
-    "📈 Unrealized gain sekitar *+{pct:.1f}%*",
+    "📈 Estimasi profit: +{pct:.1f}% dari entry",
+    "📈 Dari harga entry, posisi ini masih hijau +{pct:.1f}%",
+    "📈 Unrealized gain sekitar +{pct:.1f}%",
 ]
 
 GAIN_LINE_LOSS: list[str] = [
-    "📉 Estimasi kerugian: *{pct:.1f}%* dari entry",
-    "📉 Posisi saat ini merah *{pct:.1f}%* dari entry",
-    "📉 Unrealized loss sekitar *{pct:.1f}%*",
+    "📉 Estimasi kerugian: {pct:.1f}% dari entry",
+    "📉 Posisi saat ini merah {pct:.1f}% dari entry",
+    "📉 Unrealized loss sekitar {pct:.1f}%",
 ]
 
 # ---------------------------------------------------------------------------
