@@ -7,7 +7,7 @@ tracks positions, and calculates performance metrics.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import structlog
@@ -105,7 +105,7 @@ class BacktestEngine:
         self, tickers: list[str], months: int = 6
     ) -> dict[str, pd.DataFrame]:
         """Fetch historical data for all tickers."""
-        end = datetime.now(tz=timezone.utc)
+        end = datetime.now(tz=UTC)
         start = end - timedelta(days=months * 30 + 90)  # Extra 90 days for warmup
 
         tickers_jk = [f"{t}.JK" for t in tickers]
@@ -219,7 +219,7 @@ class BacktestEngine:
         duplicate_violations = 0
 
         # 4. Walk forward — day by day
-        for day_idx, current_date in enumerate(sorted_dates):
+        for _day_idx, current_date in enumerate(sorted_dates):
             date_str = current_date.strftime("%Y-%m-%d")
 
             for ticker in list(all_data.keys()):

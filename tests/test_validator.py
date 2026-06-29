@@ -5,7 +5,7 @@ Per PRD §16.3: empty df, close=0, high<low, stale data, insufficient rows.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pandas as pd
 import pytest

@@ -5,8 +5,6 @@ Per PRD §16.3: MarkdownV2 escaping, Rupiah format, required message elements.
 
 from __future__ import annotations
 
-import pytest
-
 from zentra.config import SignalResult, SignalStrength, SignalType
 from zentra.telegram.formatter import (
     escape_markdown_v2,

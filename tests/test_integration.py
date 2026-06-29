@@ -13,7 +13,7 @@ Tests for:
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
@@ -22,20 +22,16 @@ import pytest
 from zentra.analysis.indicators import TechnicalIndicators
 from zentra.analysis.scorer import SignalScorer
 from zentra.config import (
-    ExitPriority,
+    VALID_TRANSITIONS,
     SignalResult,
     SignalStatus,
     SignalStrength,
     SignalType,
-    VALID_TRANSITIONS,
 )
 from zentra.data.schema import validate_indicator_schema, validate_ohlcv_schema
 from zentra.data.validator import DataValidator
 from zentra.db.signals_repo import SignalsRepo
 from zentra.exceptions import CalculationError, DataIntegrityError
-
-from tests.conftest import load_fixture
-
 
 # ---------------------------------------------------------------------------
 # 1. Duplicate run — dedup prevents double signals
@@ -91,21 +87,18 @@ class TestMarketClosedDetection:
         """Saturday should be detected as weekend."""
         from zentra.runtime import is_weekend_jakarta
         # Find next Saturday
-        from datetime import date
         d = date(2026, 5, 16)  # Saturday
         assert is_weekend_jakarta(d) is True
 
     def test_weekend_detection_sunday(self):
         """Sunday should be detected as weekend."""
         from zentra.runtime import is_weekend_jakarta
-        from datetime import date
         d = date(2026, 5, 17)  # Sunday
         assert is_weekend_jakarta(d) is True
 
     def test_weekday_not_weekend(self):
         """Monday should not be weekend."""
         from zentra.runtime import is_weekend_jakarta
-        from datetime import date
         d = date(2026, 5, 18)  # Monday
         assert is_weekend_jakarta(d) is False
 
@@ -159,8 +152,8 @@ class TestTelegramRetry:
         """send_signal should return False on persistent failure, not crash."""
         from zentra.telegram.sender import TelegramSender
 
-        with patch("zentra.telegram.sender.Bot") as MockBot:
-            mock_bot = MockBot.return_value
+        with patch("zentra.telegram.sender.Bot") as mock_bot_cls:
+            mock_bot = mock_bot_cls.return_value
             mock_bot.send_message = AsyncMock(side_effect=Exception("Network error"))
 
             sender = TelegramSender(bot_token="fake", chat_id="123", admin_chat_id="456")
@@ -172,8 +165,8 @@ class TestTelegramRetry:
         """send_admin_alert should swallow exceptions."""
         from zentra.telegram.sender import TelegramSender
 
-        with patch("zentra.telegram.sender.Bot") as MockBot:
-            mock_bot = MockBot.return_value
+        with patch("zentra.telegram.sender.Bot") as mock_bot_cls:
+            mock_bot = mock_bot_cls.return_value
             mock_bot.send_message = AsyncMock(side_effect=Exception("Network error"))
 
             sender = TelegramSender(bot_token="fake", chat_id="123", admin_chat_id="456")

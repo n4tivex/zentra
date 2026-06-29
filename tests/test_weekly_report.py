@@ -6,8 +6,7 @@ covering both code paths of run_weekly_report().
 
 from __future__ import annotations
 
-import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +16,7 @@ from zentra.orchestrator import ZENTRAOrchestrator
 
 
 def _make_closed_signal(ticker: str, exit_pct: float, days_ago: int = 1, status: str = "CLOSED_TP") -> dict:
-    closed_at = (datetime.now(tz=timezone.utc) - timedelta(days=days_ago)).isoformat()
+    closed_at = (datetime.now(tz=UTC) - timedelta(days=days_ago)).isoformat()
     return {
         "ticker": ticker,
         "status": status,
@@ -25,7 +24,7 @@ def _make_closed_signal(ticker: str, exit_pct: float, days_ago: int = 1, status:
         "close_price": int(1000 * (1 + exit_pct / 100)),
         "exit_pct": exit_pct,
         "closed_at": closed_at,
-        "created_at": (datetime.now(tz=timezone.utc) - timedelta(days=days_ago + 5)).isoformat(),
+        "created_at": (datetime.now(tz=UTC) - timedelta(days=days_ago + 5)).isoformat(),
     }
 
 

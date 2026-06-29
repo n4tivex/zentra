@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -40,7 +40,7 @@ class RunLocksRepo:
         If so, the old lock is deleted and the new acquisition is allowed (retry window).
         """
         lock_key = self.build_key(mode, run_date, slot)
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
         # Layer 1: Check for recent lock (sequential duplicate guard)
         try:
@@ -137,13 +137,10 @@ class RunLocksRepo:
         if not lock_id and not lock_key:
             raise DatabaseUpdateError("Cannot release run lock without id or lock_key")
 
-        update = {"released_at": datetime.now(tz=timezone.utc).isoformat()}
+        update = {"released_at": datetime.now(tz=UTC).isoformat()}
         try:
             query = self._client.table(self._table).update(update)
-            if lock_id:
-                query = query.eq("id", lock_id)
-            else:
-                query = query.eq("lock_key", lock_key)
+            query = query.eq("id", lock_id) if lock_id else query.eq("lock_key", lock_key)
             query.execute()
             log.info("run_lock_released", lock_key=lock_key, lock_id=lock_id)
         except Exception as e:
@@ -152,7 +149,7 @@ class RunLocksRepo:
 
     def cleanup_old_locks(self, retention_days: int = 90) -> int:
         """Delete run locks older than retention_days."""
-        cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=retention_days)).isoformat()
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=retention_days)).isoformat()
         try:
             before = (
                 self._client.table(self._table)

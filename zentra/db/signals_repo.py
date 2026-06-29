@@ -5,7 +5,7 @@ Per PRD §10.1: create, get active, close, expire signals.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -146,7 +146,7 @@ class SignalsRepo:
                 "status": status.value,
                 "exit_price": exit_price,
                 "exit_pct": round(exit_pct, 2),
-                "closed_at": datetime.now(tz=timezone.utc).isoformat(),
+                "closed_at": datetime.now(tz=UTC).isoformat(),
             }).eq("id", signal_id).eq("status", SignalStatus.ACTIVE.value).execute()
 
             if isinstance(resp.data, list) and len(resp.data) == 0:
@@ -171,7 +171,7 @@ class SignalsRepo:
             raise DatabaseUpdateError(f"Failed to close signal {signal_id}") from e
 
     def expire_old_signals(self) -> list[dict]:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         cutoff_buy = now - timedelta(days=SCORING.SIGNAL_EXPIRY_DAYS)
         cutoff_watch = now - timedelta(days=1)
 
@@ -245,7 +245,7 @@ class SignalsRepo:
 
     def watch_exists_today(self, ticker: str) -> bool:
         """Check if a WATCH signal was already created today for this ticker."""
-        today_start = datetime.now(tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         try:
             result = (
                 self._client.table(self._table)

@@ -3,6 +3,7 @@
 Per PRD §8.2: minimum 3 variants per condition, Bahasa Indonesia informal tapi profesional.
 Blocks are separated from logic for maintainability.
 """
+# ruff: noqa: E501 — long narrative strings are intentional content
 
 from __future__ import annotations
 

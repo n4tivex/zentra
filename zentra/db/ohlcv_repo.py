@@ -12,7 +12,12 @@ import structlog
 from supabase import Client
 
 from zentra.config import DATA
-from zentra.exceptions import DataIntegrityError, DatabaseDeleteError, DatabaseError, DatabaseUpdateError
+from zentra.exceptions import (
+    DatabaseDeleteError,
+    DatabaseError,
+    DatabaseUpdateError,
+    DataIntegrityError,
+)
 from zentra.runtime import today_jakarta
 
 log = structlog.get_logger()

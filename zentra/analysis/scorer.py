@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import structlog
@@ -177,8 +177,7 @@ class SignalScorer:
             scores["atr"] = 0
 
         total_score = sum(scores.values())
-        if not is_exit_check and self._is_valid_number(close) and self._is_valid_number(ema_fast):
-            if float(close) < float(ema_fast):
+        if not is_exit_check and self._is_valid_number(close) and self._is_valid_number(ema_fast) and float(close) < float(ema_fast):
                 total_score -= 20
 
         confluence_count = sum(1 for key in ["ema", "macd", "rsi", "bb", "volume"] if scores.get(key, 0) > 0)
@@ -213,7 +212,7 @@ class SignalScorer:
             rsi_crossed_up=rsi_crossed_up,
             macd_confirmed=macd_confirmed,
         )
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         result = SignalResult(
             ticker=ticker,
             signal_type=signal_type,
@@ -301,10 +300,7 @@ class SignalScorer:
 
         has_hard = any(p.value <= ExitPriority.HARD_EXIT.value for p, _ in prioritized)
         total_triggers = len(prioritized)
-        if has_hard:
-            strength = SignalStrength.STRONG
-        else:
-            strength = SignalStrength.STRONG if total_triggers >= 2 else SignalStrength.NORMAL
+        strength = SignalStrength.STRONG if has_hard or total_triggers >= 2 else SignalStrength.NORMAL
 
         exit_pct = ((close - entry) / entry * 100) if entry else 0.0
         snapshot = {
@@ -327,7 +323,7 @@ class SignalScorer:
             reason=exit_reasons[0],
             risk_pct=round(abs(exit_pct), 2) if exit_pct < 0 else None,
             reward_pct=round(exit_pct, 2) if exit_pct >= 0 else None,
-            created_at=datetime.now(tz=timezone.utc).isoformat(),
+            created_at=datetime.now(tz=UTC).isoformat(),
         )
 
     def _classify(

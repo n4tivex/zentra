@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
-
 import pandas as pd
 
 from zentra.analysis.indicators import TechnicalIndicators
 from zentra.analysis.risk import RiskCalculator
 from zentra.analysis.scorer import SignalScorer
-from zentra.config import RiskLevels, SignalType, TICKER_NAMES
-from zentra.market_calendar import MarketCalendar
+from zentra.config import TICKER_NAMES, RiskLevels, SignalType
 
 
 class FixedRiskCalculator:

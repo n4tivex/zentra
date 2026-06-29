@@ -9,7 +9,7 @@ import asyncio
 
 import structlog
 from telegram import Bot
-from telegram.error import RetryAfter, NetworkError
+from telegram.error import NetworkError, RetryAfter
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 log = structlog.get_logger()

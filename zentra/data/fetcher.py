@@ -6,7 +6,7 @@ Per PRD §5.1: batch download, .JK suffix, cache check, retry logic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 import structlog
@@ -160,7 +160,7 @@ class MarketDataFetcher:
             return cached
 
         ticker_jk = f"{ticker}.JK"
-        end = datetime.now(tz=timezone.utc) + timedelta(days=1)
+        end = datetime.now(tz=UTC) + timedelta(days=1)
         start = end - timedelta(days=days)
 
         try:
@@ -211,7 +211,7 @@ class MarketDataFetcher:
         reraise=True,
     )
     def _fetch_from_yahoo(self, tickers_jk: list[str], days: int) -> pd.DataFrame:
-        end = datetime.now(tz=timezone.utc) + timedelta(days=1)
+        end = datetime.now(tz=UTC) + timedelta(days=1)
         start = end - timedelta(days=days)
         df = yf.download(
             tickers_jk,

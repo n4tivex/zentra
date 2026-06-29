@@ -50,6 +50,7 @@ class TestSignalScorer:
         If indicators compute successfully, the RR gate should block BUY.
         """
         import numpy as np
+
         from zentra.exceptions import CalculationError
 
         np.random.seed(42)
@@ -152,7 +153,7 @@ class TestSignalScorer:
             "stop_loss": int(close * 0.80),
             "take_profit": int(close * 1.20),
         }
-        result = scorer.check_exit("TEST", df, active_signal)
+        _ = scorer.check_exit("TEST", df, active_signal)
         # May or may not exit depending on other conditions, but at minimum no TP/SL/RSI trigger
 
     def test_min_hold_days_blocks_soft_exit(self, scorer, indicators, bullish_df):

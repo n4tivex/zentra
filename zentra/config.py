@@ -7,30 +7,29 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Optional
+from enum import Enum, StrEnum
+from typing import Any
 
 from zentra.exceptions import ConfigurationError
-
 
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
 
-class SignalType(str, Enum):
+class SignalType(StrEnum):
     BUY = "BUY"
     EXIT = "EXIT"
     WATCH = "WATCH"
     NO_SIGNAL = "NO_SIGNAL"
 
 
-class SignalStrength(str, Enum):
+class SignalStrength(StrEnum):
     STRONG = "STRONG"
     NORMAL = "NORMAL"
     BORDERLINE = "BORDERLINE"
 
 
-class SignalStatus(str, Enum):
+class SignalStatus(StrEnum):
     ACTIVE = "ACTIVE"
     CLOSED_TP = "CLOSED_TP"
     CLOSED_SL = "CLOSED_SL"
@@ -38,13 +37,13 @@ class SignalStatus(str, Enum):
     EXPIRED = "EXPIRED"
 
 
-class RunMode(str, Enum):
+class RunMode(StrEnum):
     MORNING = "morning"
     CLOSING = "closing"
     MANUAL = "manual"
 
 
-class RunStatus(str, Enum):
+class RunStatus(StrEnum):
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
     PARTIAL = "PARTIAL"
@@ -105,20 +104,20 @@ class SignalResult:
     signal_type: SignalType
     score: int
     confluence_count: int
-    entry_price: Optional[int] = None
-    stop_loss: Optional[int] = None
-    take_profit: Optional[int] = None
-    risk_pct: Optional[float] = None
-    reward_pct: Optional[float] = None
-    rr_ratio: Optional[float] = None
-    narrative: Optional[str] = None
+    entry_price: int | None = None
+    stop_loss: int | None = None
+    take_profit: int | None = None
+    risk_pct: float | None = None
+    reward_pct: float | None = None
+    rr_ratio: float | None = None
+    narrative: str | None = None
     indicator_snapshot: dict = field(default_factory=dict)
-    reason: Optional[str] = None
+    reason: str | None = None
     signal_strength: SignalStrength = SignalStrength.NORMAL
     exit_reasons: list[str] = field(default_factory=list)
-    exit_status: Optional[SignalStatus] = None
-    created_at: Optional[str] = None
-    expires_at: Optional[str] = None
+    exit_status: SignalStatus | None = None
+    created_at: str | None = None
+    expires_at: str | None = None
 
 
 # ---------------------------------------------------------------------------

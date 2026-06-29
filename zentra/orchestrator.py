@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 import structlog
@@ -40,11 +40,12 @@ from zentra.exceptions import (
     InsufficientDataError,
     StaleDataError,
 )
+from zentra.market_calendar import MarketCalendar
 from zentra.narrative.blocks import MARKET_CLOSED_HOLIDAY, MARKET_CLOSED_WEEKEND
 from zentra.narrative.generator import NarrativeGenerator
-from zentra.market_calendar import MarketCalendar
 from zentra.runtime import today_jakarta
 from zentra.telegram.formatter import (
+    _pct_str_human,
     escape_markdown_v2,
     format_active_positions_message,
     format_buy_message,
@@ -55,7 +56,6 @@ from zentra.telegram.formatter import (
     format_rupiah,
     format_watch_message,
     format_weekly_performance_summary,
-    _pct_str_human,
 )
 from zentra.telegram.sender import TelegramSender
 
@@ -569,7 +569,7 @@ class ZENTRAOrchestrator:
                     if created_at:
                         try:
                             created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                            held = (datetime.now(tz=timezone.utc) - created_dt).days
+                            held = (datetime.now(tz=UTC) - created_dt).days
                             days_info = f" \u00b7 {held} hari"
                         except (ValueError, TypeError):
                             pass
@@ -843,7 +843,7 @@ class ZENTRAOrchestrator:
         created_str = active.get("created_at", "")
         if created_str:
             created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-            days_held = (datetime.now(tz=timezone.utc) - created_dt).days
+            days_held = (datetime.now(tz=UTC) - created_dt).days
         else:
             days_held = 99
 
@@ -973,7 +973,7 @@ class ZENTRAOrchestrator:
     async def run_weekly_report(self) -> bool:
         """Generate and send weekly performance report."""
         run_log = log.bind(mode="weekly", run_date=self._today)
-        start_time = datetime.now(tz=timezone.utc)
+        start_time = datetime.now(tz=UTC)
 
         if not self._dry_run:
             try:
@@ -1003,13 +1003,13 @@ class ZENTRAOrchestrator:
             run_logs_repo.update_run(
                 run_id,
                 status=RunStatus.FAILED,
-                duration_seconds=(datetime.now(tz=timezone.utc) - start_time).total_seconds(),
+                duration_seconds=(datetime.now(tz=UTC) - start_time).total_seconds(),
                 error_message=str(e),
             )
             return False
 
         # Filter to last 7 days
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=7)
+        cutoff = datetime.now(tz=UTC) - timedelta(days=7)
         recent = []
         for sig in closed:
             closed_at = sig.get("closed_at", "")
@@ -1026,7 +1026,7 @@ class ZENTRAOrchestrator:
             run_logs_repo.update_run(
                 run_id,
                 status=RunStatus.SUCCESS,
-                duration_seconds=(datetime.now(tz=timezone.utc) - start_time).total_seconds(),
+                duration_seconds=(datetime.now(tz=UTC) - start_time).total_seconds(),
             )
             return True
 
@@ -1066,7 +1066,7 @@ class ZENTRAOrchestrator:
             run_logs_repo.update_run(
                 run_id,
                 status=RunStatus.SUCCESS if success else RunStatus.FAILED,
-                duration_seconds=(datetime.now(tz=timezone.utc) - start_time).total_seconds(),
+                duration_seconds=(datetime.now(tz=UTC) - start_time).total_seconds(),
             )
         run_log.info("weekly_report_sent", success=success, total_closed=total_closed)
         return success

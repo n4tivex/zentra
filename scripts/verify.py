@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
-import re
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -106,7 +106,7 @@ def main() -> None:
     print("  STEP 3: Generating verification report...")
     print("=" * 50)
 
-    from zentra.backtest.report import generate_report, THRESHOLDS
+    from zentra.backtest.report import THRESHOLDS, generate_report
 
     report = generate_report(
         bt=bt_result,

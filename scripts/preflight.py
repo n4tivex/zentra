@@ -17,11 +17,11 @@ from telegram import Bot
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.check_market_calendar import validate_calendar
-from zentra.config import get_env, validate_env
-from zentra.db.client import get_client
-from zentra.exceptions import ConfigurationError
-from zentra.market_calendar import BUNDLED_CALENDAR_PATH, MarketCalendar
+from scripts.check_market_calendar import validate_calendar  # noqa: E402
+from zentra.config import get_env, validate_env  # noqa: E402
+from zentra.db.client import get_client  # noqa: E402
+from zentra.exceptions import ConfigurationError  # noqa: E402
+from zentra.market_calendar import BUNDLED_CALENDAR_PATH, MarketCalendar  # noqa: E402
 
 
 async def _check_telegram() -> None:

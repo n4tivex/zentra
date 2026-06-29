@@ -6,7 +6,7 @@ Per PRD §10.3: create, update, query run logs.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -77,7 +77,7 @@ class RunLogsRepo:
         status_value = status.value if isinstance(status, RunStatus) else status
         update: dict[str, Any] = {
             "status": status_value,
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
         }
         if duration_seconds is not None:
             update["duration_seconds"] = round(duration_seconds, 2)
@@ -138,7 +138,7 @@ class RunLogsRepo:
 
     def cleanup_old_logs(self, retention_days: int = 180) -> int:
         """Delete run logs older than retention_days."""
-        cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=retention_days)).isoformat()
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=retention_days)).isoformat()
         try:
             before = (
                 self._client.table(self._table)

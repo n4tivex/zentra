@@ -21,10 +21,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from zentra.db.client import get_client
-from zentra.db.ohlcv_repo import OHLCVRepo
-from zentra.db.run_locks_repo import RunLocksRepo
-from zentra.db.run_logs_repo import RunLogsRepo
+from zentra.db.client import get_client  # noqa: E402
+from zentra.db.ohlcv_repo import OHLCVRepo  # noqa: E402
+from zentra.db.run_locks_repo import RunLocksRepo  # noqa: E402
+from zentra.db.run_logs_repo import RunLogsRepo  # noqa: E402
 
 log = structlog.get_logger()
 

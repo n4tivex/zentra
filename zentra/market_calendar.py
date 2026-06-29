@@ -136,7 +136,7 @@ class MarketCalendar:
         object.__setattr__(self, "source_path", source_path)
 
     @classmethod
-    def from_env(cls) -> "MarketCalendar":
+    def from_env(cls) -> MarketCalendar:
         calendar_path = Path(os.getenv("IDX_MARKET_CALENDAR_FILE", str(BUNDLED_CALENDAR_PATH)))
         extra = _parse_extra_closed_dates(os.getenv("IDX_MARKET_HOLIDAYS", ""))
         calendar = cls.from_file(calendar_path, override_dates=extra)
@@ -149,7 +149,7 @@ class MarketCalendar:
         return calendar
 
     @classmethod
-    def from_file(cls, path: Path | str, override_dates: set[date] | None = None) -> "MarketCalendar":
+    def from_file(cls, path: Path | str, override_dates: set[date] | None = None) -> MarketCalendar:
         resolved = Path(path)
         payload = _load_calendar_payload(resolved)
         return cls.from_records(
@@ -165,7 +165,7 @@ class MarketCalendar:
         *,
         override_dates: set[date] | None = None,
         source_path: Path | None = None,
-    ) -> "MarketCalendar":
+    ) -> MarketCalendar:
         closures: dict[date, MarketClosure] = {}
         for record in records:
             closure = _closure_from_record(record)

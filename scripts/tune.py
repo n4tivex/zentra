@@ -13,7 +13,7 @@ from dataclasses import dataclass
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from zentra.backtest.engine import BacktestEngine, BacktestResult
-from zentra.config import TICKERS, SCORING
+from zentra.config import SCORING, TICKERS
 
 
 @dataclass

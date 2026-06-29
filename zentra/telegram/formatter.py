@@ -6,9 +6,9 @@ Production-grade signal formatting — no branding, no fluff.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
-from zentra.config import SignalResult, SignalStrength, SignalStatus, TICKER_NAMES
+from zentra.config import TICKER_NAMES, SignalResult, SignalStatus, SignalStrength
 
 WIB = timezone(timedelta(hours=7))
 
@@ -293,7 +293,7 @@ def format_expired_message(record: dict) -> str:
     if created_at_str:
         try:
             created = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-            days = (datetime.now(tz=timezone.utc) - created).days
+            days = (datetime.now(tz=UTC) - created).days
         except (ValueError, TypeError):
             pass
 

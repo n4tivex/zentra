@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from zentra.backtest.engine import BacktestResult
-
 
 # ---------------------------------------------------------------------------
 # Thresholds
@@ -34,7 +33,7 @@ def generate_report(
     # Header
     w("=" * 72)
     w("  ZENTRA VERIFICATION REPORT")
-    w(f"  Generated: {datetime.now(tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    w(f"  Generated: {datetime.now(tz=UTC).strftime('%Y-%m-%d %H:%M UTC')}")
     w("=" * 72)
     w("")
 

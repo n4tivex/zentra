@@ -13,7 +13,7 @@ from zentra.data.validator import DataValidator
 from zentra.db.run_locks_repo import RunLocksRepo
 from zentra.db.run_logs_repo import RunLogsRepo
 from zentra.db.signals_repo import SignalsRepo
-from zentra.exceptions import DataFetchError, DatabaseConflictError, DatabaseUpdateError
+from zentra.exceptions import DatabaseConflictError, DatabaseUpdateError, DataFetchError
 from zentra.orchestrator import ZENTRAOrchestrator
 from zentra.telegram.formatter import format_buy_message, format_failure_message, format_rupiah
 
@@ -193,15 +193,13 @@ class TestFetchCoverage:
 
     def test_all_fetch_failed_raises(self):
         fetcher = MarketDataFetcher()
-        with patch.object(fetcher, "_fetch_from_yahoo", side_effect=Exception("provider down")):
-            with pytest.raises(DataFetchError):
-                fetcher.fetch_all_with_coverage(["BBCA"])
+        with patch.object(fetcher, "_fetch_from_yahoo", side_effect=Exception("provider down")), pytest.raises(DataFetchError):
+            fetcher.fetch_all_with_coverage(["BBCA"])
 
     def test_empty_response_is_tracked_as_failed_ticker(self):
         fetcher = MarketDataFetcher()
-        with patch.object(fetcher, "_fetch_from_yahoo", return_value=pd.DataFrame()):
-            with pytest.raises(DataFetchError):
-                fetcher.fetch_all_with_coverage(["BBCA"])
+        with patch.object(fetcher, "_fetch_from_yahoo", return_value=pd.DataFrame()), pytest.raises(DataFetchError):
+            fetcher.fetch_all_with_coverage(["BBCA"])
 
         assert fetcher.last_coverage.empty_tickers == ["BBCA"]
         assert fetcher.last_coverage.missing_tickers == ["BBCA"]
