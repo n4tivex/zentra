@@ -7,7 +7,6 @@ P2-19 (structured logging), P2-21 (enum harmonization).
 
 from __future__ import annotations
 
-import random
 import os
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -554,8 +553,6 @@ class ZENTRAOrchestrator:
                 for pos in active_positions:
                     t = pos.get("ticker", "?")
                     ep = pos.get("entry_price", 0)
-                    tp_val = pos.get("take_profit", 0)
-                    sl_val = pos.get("stop_loss", 0)
                     created_at = pos.get("created_at", "")
 
                     current_price = 0
@@ -1028,7 +1025,7 @@ class ZENTRAOrchestrator:
             run_log.info("weekly_report_no_closed_signals")
             run_logs_repo.update_run(
                 run_id,
-                status=RunStatus.COMPLETED,
+                status=RunStatus.SUCCESS,
                 duration_seconds=(datetime.now(tz=timezone.utc) - start_time).total_seconds(),
             )
             return True
@@ -1068,7 +1065,7 @@ class ZENTRAOrchestrator:
         if not self._dry_run:
             run_logs_repo.update_run(
                 run_id,
-                status=RunStatus.COMPLETED if success else RunStatus.FAILED,
+                status=RunStatus.SUCCESS if success else RunStatus.FAILED,
                 duration_seconds=(datetime.now(tz=timezone.utc) - start_time).total_seconds(),
             )
         run_log.info("weekly_report_sent", success=success, total_closed=total_closed)

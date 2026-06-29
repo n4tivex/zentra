@@ -11,7 +11,7 @@ import random
 
 import structlog
 
-from zentra.config import SCORING, SignalResult, SignalStrength, SignalType, TICKER_NAMES
+from zentra.config import SignalResult, SignalStrength, TICKER_NAMES
 from zentra.narrative import blocks
 
 log = structlog.get_logger()

@@ -163,7 +163,8 @@ class TestFormatDailySummary:
         )
         assert "Daily Scan" in msg
         assert "2026" in msg
-        assert "20 ticker" in msg
+        assert "18/20" in msg
+        assert "⚠" in msg
 
 
 class TestFormatBuyZone:

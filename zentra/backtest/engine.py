@@ -282,7 +282,7 @@ class BacktestEngine:
                                 del active_signals[ticker]
                                 all_trades.append(trade)
                                 equity += trade.pnl_pct or 0
-                        except (CalculationError, Exception):
+                        except CalculationError:
                             pass
 
                     # Track equity after EXIT
@@ -315,7 +315,7 @@ class BacktestEngine:
                         )
                         active_signals[ticker] = trade
 
-                except (CalculationError, Exception):
+                except CalculationError:
                     pass
 
             # End-of-day equity update

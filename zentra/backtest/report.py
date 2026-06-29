@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from zentra.backtest.engine import BacktestResult, TickerStats
+from zentra.backtest.engine import BacktestResult
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ def generate_report(
     w(f"  Passed: {regression_passed}/{regression_total} ({reg_rate:.0f}%)")
     w(f"  Status: {'PASS' if reg_pass else 'FAIL'}")
     if regression_failed_names:
-        w(f"  Failed tests:")
+        w("  Failed tests:")
         for name in regression_failed_names:
             w(f"    - {name}")
     w("")

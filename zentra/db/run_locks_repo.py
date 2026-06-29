@@ -14,6 +14,7 @@ from zentra.exceptions import DatabaseDeleteError, DatabaseInsertError, Database
 log = structlog.get_logger()
 
 LOCK_THROTTLE_HOURS = 2
+STALE_RUN_MINUTES = 5  # real runs take 20-40s; anything still RUNNING after this is dead
 
 
 class RunLocksRepo:
@@ -59,12 +60,29 @@ class RunLocksRepo:
                         getter = getattr(run_logs_repo, "get_run", None)
                         if callable(getter):
                             prev_run = getter(existing["owner_run_id"])
-                            if prev_run and prev_run.get("status") == "FAILED":
+                            is_failed = bool(prev_run) and prev_run.get("status") == "FAILED"
+                            is_stale_running = False
+                            if prev_run and prev_run.get("status") == "RUNNING" and prev_run.get("started_at"):
+                                started = datetime.fromisoformat(
+                                    prev_run["started_at"].replace("Z", "+00:00")
+                                )
+                                is_stale_running = (now - started) > timedelta(minutes=STALE_RUN_MINUTES)
+
+                            if is_failed or is_stale_running:
                                 log.info(
                                     "run_lock_retry_allowed",
                                     lock_key=lock_key,
                                     previous_run_id=existing["owner_run_id"],
+                                    reason="failed" if is_failed else "stale_running",
                                 )
+                                if is_stale_running:
+                                    closer = getattr(run_logs_repo, "update_run", None)
+                                    if callable(closer):
+                                        closer(
+                                            existing["owner_run_id"],
+                                            status="FAILED",
+                                            error_message="watchdog: reaped stale RUNNING run (no completion within timeout, likely native crash)",
+                                        )
                                 self._client.table(self._table).delete().eq("id", existing["id"]).execute()
                                 # Proceed to Layer 2 insert
                                 pass

@@ -6,7 +6,6 @@ Production-grade signal formatting — no branding, no fluff.
 
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone, timedelta
 
 from zentra.config import SignalResult, SignalStrength, SignalStatus, TICKER_NAMES
@@ -188,7 +187,7 @@ def format_exit_message(result: SignalResult, active_signal: dict) -> str:
     close = snap.get("close", 0)
     entry = active_signal.get("entry_price", 0)
     exit_reasons = result.exit_reasons or []
-    primary_reason = result.reason or "Technical reversal"
+    _ = result.reason or "Technical reversal"
     entry_created = active_signal.get("created_at", "")
 
     esc = escape_markdown_v2
@@ -331,10 +330,13 @@ def format_daily_summary(
     signals = "\n".join(esc(s) for s in signal_lines) if signal_lines else "Tidak ada sinyal"
     mode_tag = f" {esc(mode.upper())}" if mode else ""
 
+    status_line = f"\u2705 {success}/{total} ticker \u00b7 {esc(f'{duration:.1f}')} detik"
+    if failed:
+        status_line += f" \u00b7 \u26a0\ufe0f {failed} gagal"
     lines = [
         f"📊 *Daily Scan{esc(mode_tag)} \u2014 {esc(date_str)}*",
         "",
-        f"\u2705 {total} ticker \u00b7 {esc(f'{duration:.1f}')} detik",
+        status_line,
         "",
         signals,
     ]
