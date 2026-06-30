@@ -135,7 +135,9 @@ pytz==2026.2
 realtime==2.31.0
     # via supabase
 requests==2.34.2
-    # via yfinance
+    # via
+    #   -r requirements.in
+    #   yfinance
 rich==15.0.0
     # via curl-cffi
 six==1.17.0

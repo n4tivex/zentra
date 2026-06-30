@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
+import requests as reqs
 import structlog
 import yfinance as yf
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -18,6 +19,13 @@ from zentra.config import DATA
 from zentra.exceptions import DataFetchError, TickerNotFoundError
 
 log = structlog.get_logger()
+
+_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+_HTTP_SESSION = reqs.Session()
+_HTTP_SESSION.headers.update({"User-Agent": _USER_AGENT})
 
 
 @dataclass
@@ -171,6 +179,7 @@ class MarketDataFetcher:
                 end=end.strftime("%Y-%m-%d"),
                 progress=False,
                 auto_adjust=True,
+                session=_HTTP_SESSION,
             )
         except Exception as e:
             raise DataFetchError(f"Failed to fetch {ticker}: {e}") from e
@@ -223,6 +232,7 @@ class MarketDataFetcher:
                     end=end.strftime("%Y-%m-%d"),
                     progress=False,
                     auto_adjust=True,
+                    session=_HTTP_SESSION,
                 )
                 if df is not None and not df.empty:
                     results[ticker_jk] = df
