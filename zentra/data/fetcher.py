@@ -220,6 +220,7 @@ class MarketDataFetcher:
             group_by="ticker",
             progress=False,
             auto_adjust=True,
+            threads=False,
         )
         if df is None or df.empty:
             raise DataFetchError("yfinance returned empty DataFrame")
