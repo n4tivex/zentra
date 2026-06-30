@@ -5,11 +5,11 @@ Per PRD §5.1: batch download, .JK suffix, cache check, retry logic.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
-import requests as reqs
 import structlog
 import yfinance as yf
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -18,8 +18,6 @@ from zentra.config import DATA
 from zentra.exceptions import DataFetchError, TickerNotFoundError
 
 log = structlog.get_logger()
-
-_HTTP_SESSION = reqs.Session()
 
 
 @dataclass
@@ -123,7 +121,7 @@ class MarketDataFetcher:
             for ticker in missing:
                 ticker_jk = f"{ticker}.JK"
                 try:
-                    df = self._extract_ticker(raw, ticker_jk)
+                    df = raw.get(ticker_jk)
                     if df is None or df.empty:
                         coverage.empty_tickers.append(ticker)
                         coverage.failed_tickers.append(ticker)
@@ -173,7 +171,6 @@ class MarketDataFetcher:
                 end=end.strftime("%Y-%m-%d"),
                 progress=False,
                 auto_adjust=True,
-                session=_HTTP_SESSION,
             )
         except Exception as e:
             raise DataFetchError(f"Failed to fetch {ticker}: {e}") from e
@@ -214,38 +211,27 @@ class MarketDataFetcher:
         retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
         reraise=True,
     )
-    def _fetch_from_yahoo(self, tickers_jk: list[str], days: int) -> pd.DataFrame:
+    def _fetch_from_yahoo(self, tickers_jk: list[str], days: int) -> dict[str, pd.DataFrame]:
         end = datetime.now(tz=UTC) + timedelta(days=1)
         start = end - timedelta(days=days)
-        df = yf.download(
-            tickers_jk,
-            start=start.strftime("%Y-%m-%d"),
-            end=end.strftime("%Y-%m-%d"),
-            group_by="ticker",
-            progress=False,
-            auto_adjust=True,
-            threads=False,
-            session=_HTTP_SESSION,
-        )
-        if df is None or df.empty:
-            raise DataFetchError("yfinance returned empty DataFrame")
-        return df
-
-    def _extract_ticker(self, raw: pd.DataFrame, ticker_jk: str) -> pd.DataFrame | None:
-        """Extract a single ticker's data from a download payload."""
-        if raw is None or raw.empty:
-            return None
-
-        if isinstance(raw.columns, pd.MultiIndex):
-            level0 = raw.columns.get_level_values(0)
-            if ticker_jk in level0:
-                return raw[ticker_jk].copy()
-            bare = ticker_jk.replace(".JK", "")
-            if bare in level0:
-                return raw[bare].copy()
-            return None
-
-        return raw.copy()
+        results: dict[str, pd.DataFrame] = {}
+        for ticker_jk in tickers_jk:
+            try:
+                df = yf.download(
+                    ticker_jk,
+                    start=start.strftime("%Y-%m-%d"),
+                    end=end.strftime("%Y-%m-%d"),
+                    progress=False,
+                    auto_adjust=True,
+                )
+                if df is not None and not df.empty:
+                    results[ticker_jk] = df
+            except Exception:
+                log.warning("ticker_fetch_failed", ticker=ticker_jk)
+            time.sleep(1)
+        if not results:
+            raise DataFetchError("yfinance returned empty DataFrame for all tickers")
+        return results
 
     def _normalize(self, df: pd.DataFrame) -> pd.DataFrame:
         """Normalize column names and index."""
