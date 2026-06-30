@@ -83,7 +83,7 @@ packaging==26.2
     # via
     #   deprecation
     #   pytest
-pandas==3.0.4
+pandas==3.0.3
     # via
     #   -r requirements.in
     #   pandas-ta

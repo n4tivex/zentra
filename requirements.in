@@ -4,7 +4,7 @@ pandas-ta>=0.3.14b
 supabase>=2.0
 python-telegram-bot>=20.0
 structlog>=24.0
-pandas>=2.0
+pandas!=3.0.4,>=3.0
 numpy>=1.26
 tenacity>=8.0
 python-dotenv>=1.0
