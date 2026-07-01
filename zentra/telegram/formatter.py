@@ -41,13 +41,6 @@ def _pct_str(value: float) -> str:
     return f"{value:.1f}%"
 
 
-def _pct_str_human(value: float) -> str:
-    """Format a percentage for signal_lines (compact)."""
-    if value >= 0:
-        return f"+{value:.1f}%"
-    return f"{value:.1f}%"
-
-
 def _strength_label(strength: SignalStrength) -> str:
     """Map signal strength to a concise label."""
     if strength == SignalStrength.STRONG:
