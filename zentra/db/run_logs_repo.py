@@ -140,12 +140,7 @@ class RunLogsRepo:
         """Delete run logs older than retention_days."""
         cutoff = (datetime.now(tz=UTC) - timedelta(days=retention_days)).isoformat()
         try:
-            before = (
-                self._client.table(self._table)
-                .select("id")
-                .lt("created_at", cutoff)
-                .execute()
-            )
+            before = self._client.table(self._table).select("id").lt("created_at", cutoff).execute()
             rows_to_delete = len(before.data) if before.data else 0
             if rows_to_delete == 0:
                 return 0

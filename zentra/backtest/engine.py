@@ -26,9 +26,11 @@ log = structlog.get_logger()
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Trade:
     """A single completed or open trade."""
+
     ticker: str
     entry_date: str
     entry_price: float
@@ -48,6 +50,7 @@ class Trade:
 @dataclass
 class TickerStats:
     """Per-ticker performance summary."""
+
     ticker: str
     total_signals: int = 0
     wins: int = 0
@@ -61,6 +64,7 @@ class TickerStats:
 @dataclass
 class BacktestResult:
     """Full backtest output."""
+
     start_date: str
     end_date: str
     tickers_tested: int
@@ -91,6 +95,7 @@ class BacktestResult:
 # Engine
 # ---------------------------------------------------------------------------
 
+
 class BacktestEngine:
     """Walk-forward backtest engine with strict no-lookahead guarantee."""
 
@@ -101,9 +106,7 @@ class BacktestEngine:
         self.scorer = SignalScorer()
         self.validator = DataValidator()
 
-    def fetch_historical(
-        self, tickers: list[str], months: int = 6
-    ) -> dict[str, pd.DataFrame]:
+    def fetch_historical(self, tickers: list[str], months: int = 6) -> dict[str, pd.DataFrame]:
         """Fetch historical data for all tickers."""
         end = datetime.now(tz=UTC)
         start = end - timedelta(days=months * 30 + 90)  # Extra 90 days for warmup
@@ -187,7 +190,7 @@ class BacktestEngine:
         # 2. Determine the common date range (after warmup)
         all_dates: set[datetime] = set()
         for df in all_data.values():
-            all_dates.update(df.index[self.MIN_WARMUP_DAYS:].tolist())
+            all_dates.update(df.index[self.MIN_WARMUP_DAYS :].tolist())
         sorted_dates = sorted(all_dates)
 
         if not sorted_dates:
@@ -246,7 +249,7 @@ class BacktestEngine:
                     # Check expiry (10 days)
                     entry_dt = datetime.strptime(trade.entry_date, "%Y-%m-%d")
                     days_held = (current_date - entry_dt).days
-                    if hasattr(current_date, 'date'):
+                    if hasattr(current_date, "date"):
                         days_held = (current_date - entry_dt).days
 
                     # SL hit (check low price first to be conservative)
@@ -271,11 +274,16 @@ class BacktestEngine:
                         # Check technical EXIT conditions
                         try:
                             # indicators are already precalculated in df_slice
-                            exit_result = self.scorer.check_exit(ticker, df_slice, {
-                                "entry_price": int(trade.entry_price),
-                                "stop_loss": int(trade.stop_loss),
-                                "take_profit": int(trade.take_profit),
-                            }, days_held=days_held)
+                            exit_result = self.scorer.check_exit(
+                                ticker,
+                                df_slice,
+                                {
+                                    "entry_price": int(trade.entry_price),
+                                    "stop_loss": int(trade.stop_loss),
+                                    "take_profit": int(trade.take_profit),
+                                },
+                                days_held=days_held,
+                            )
                             if exit_result:
                                 reason = ", ".join(exit_result.exit_reasons[:2])
                                 self._close_trade(trade, date_str, current_close, reason)
@@ -361,16 +369,18 @@ class BacktestEngine:
             t_wins = sum(1 for t in trades if (t.pnl_pct or 0) > 0)
             t_returns = [t.pnl_pct or 0 for t in trades]
             t_holding = [t.holding_days or 0 for t in trades]
-            ticker_stats.append(TickerStats(
-                ticker=ticker,
-                total_signals=len(trades),
-                wins=t_wins,
-                losses=len(trades) - t_wins,
-                total_return_pct=sum(t_returns),
-                avg_return_pct=sum(t_returns) / len(t_returns) if t_returns else 0,
-                avg_holding_days=sum(t_holding) / len(t_holding) if t_holding else 0,
-                win_rate=(t_wins / len(trades) * 100) if trades else 0,
-            ))
+            ticker_stats.append(
+                TickerStats(
+                    ticker=ticker,
+                    total_signals=len(trades),
+                    wins=t_wins,
+                    losses=len(trades) - t_wins,
+                    total_return_pct=sum(t_returns),
+                    avg_return_pct=sum(t_returns) / len(t_returns) if t_returns else 0,
+                    avg_holding_days=sum(t_holding) / len(t_holding) if t_holding else 0,
+                    win_rate=(t_wins / len(trades) * 100) if trades else 0,
+                )
+            )
 
         return BacktestResult(
             start_date=start_date,
@@ -395,17 +405,13 @@ class BacktestEngine:
             duplicate_violations=duplicate_violations,
         )
 
-    def _close_trade(
-        self, trade: Trade, exit_date: str, exit_price: float, reason: str
-    ) -> None:
+    def _close_trade(self, trade: Trade, exit_date: str, exit_price: float, reason: str) -> None:
         """Close a trade and calculate P&L."""
         trade.exit_date = exit_date
         trade.exit_price = exit_price
         trade.exit_reason = reason
         trade.is_open = False
-        trade.pnl_pct = round(
-            (exit_price - trade.entry_price) / trade.entry_price * 100, 2
-        )
+        trade.pnl_pct = round((exit_price - trade.entry_price) / trade.entry_price * 100, 2)
         entry_dt = datetime.strptime(trade.entry_date, "%Y-%m-%d")
         exit_dt = datetime.strptime(exit_date, "%Y-%m-%d")
         trade.holding_days = (exit_dt - entry_dt).days

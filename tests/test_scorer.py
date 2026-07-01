@@ -32,9 +32,7 @@ class TestSignalScorer:
         # Bullish data should score > 0 with some confluence
         assert result.score > 0
         assert result.confluence_count >= 0
-        assert result.signal_type in (
-            SignalType.BUY, SignalType.WATCH, SignalType.NO_SIGNAL
-        )
+        assert result.signal_type in (SignalType.BUY, SignalType.WATCH, SignalType.NO_SIGNAL)
 
     def test_bearish_setup_scores_low(self, scorer, indicators, bearish_df):
         """Bearish data should not produce BUY signal."""
@@ -56,13 +54,16 @@ class TestSignalScorer:
         np.random.seed(42)
         dates = pd.date_range("2026-04-01", periods=40, freq="B")
         close = [1000 + i * 0.1 for i in range(40)]  # Very flat, tiny ATR
-        df = pd.DataFrame({
-            "open": close,
-            "high": [c + 0.5 for c in close],
-            "low": [c - 0.5 for c in close],
-            "close": close,
-            "volume": [1000000] * 40,
-        }, index=dates)
+        df = pd.DataFrame(
+            {
+                "open": close,
+                "high": [c + 0.5 for c in close],
+                "low": [c - 0.5 for c in close],
+                "close": close,
+                "volume": [1000000] * 40,
+            },
+            index=dates,
+        )
 
         from zentra.analysis.indicators import TechnicalIndicators
 
@@ -87,9 +88,20 @@ class TestSignalScorer:
         df = indicators.compute_all(bullish_df)
         result = scorer.score_buy("TEST", df)
         required_keys = [
-            "ema_9", "ema_21", "rsi_14", "rsi_crossed_up", "macd", "macd_signal",
-            "macd_histogram", "bb_lower", "bb_upper", "atr_14",
-            "close", "volume", "volume_ratio", "volume_sma_5",
+            "ema_9",
+            "ema_21",
+            "rsi_14",
+            "rsi_crossed_up",
+            "macd",
+            "macd_signal",
+            "macd_histogram",
+            "bb_lower",
+            "bb_upper",
+            "atr_14",
+            "close",
+            "volume",
+            "volume_ratio",
+            "volume_sma_5",
         ]
         for key in required_keys:
             assert key in result.indicator_snapshot
@@ -167,7 +179,7 @@ class TestSignalScorer:
 
         active_signal = {
             "entry_price": int(close * 0.95),
-            "stop_loss": int(close * 0.80),   # SL far below
+            "stop_loss": int(close * 0.80),  # SL far below
             "take_profit": int(close * 1.20),  # TP far above
         }
         result = scorer.check_exit("TEST", df, active_signal, days_held=0)

@@ -11,12 +11,12 @@ from zentra.backtest.engine import BacktestResult
 # ---------------------------------------------------------------------------
 
 THRESHOLDS = {
-    "win_rate_min": 20.0,        # >= 20% win rate (adjusted for bear market momentum baseline)
-    "profit_factor_min": 0.4,    # >= 0.4 profit factor
-    "max_drawdown_max": 40.0,    # <= 40% max drawdown
-    "lookahead_max": 0,          # 0 violations
-    "duplicate_max": 0,          # 0 violations
-    "regression_pass_rate": 100, # 100% tests pass
+    "win_rate_min": 20.0,  # >= 20% win rate (adjusted for bear market momentum baseline)
+    "profit_factor_min": 0.4,  # >= 0.4 profit factor
+    "max_drawdown_max": 40.0,  # <= 40% max drawdown
+    "lookahead_max": 0,  # 0 violations
+    "duplicate_max": 0,  # 0 violations
+    "regression_pass_rate": 100,  # 100% tests pass
 }
 
 
@@ -104,7 +104,7 @@ def generate_report(
 
     if bt.ticker_stats:
         w(f"  {'Ticker':<8} {'Signals':>8} {'Win%':>7} {'AvgRet%':>9} {'TotalRet%':>10} {'AvgHold':>8}")
-        w(f"  {'─'*8} {'─'*8} {'─'*7} {'─'*9} {'─'*10} {'─'*8}")
+        w(f"  {'─' * 8} {'─' * 8} {'─' * 7} {'─' * 9} {'─' * 10} {'─' * 8}")
 
         sorted_stats = sorted(bt.ticker_stats, key=lambda s: s.total_return_pct, reverse=True)
         for s in sorted_stats:
@@ -142,7 +142,7 @@ def generate_report(
     sample = closed[-10:] if len(closed) >= 10 else closed
     if sample:
         w(f"  {'Ticker':<8} {'Entry':>12} {'Exit':>12} {'P&L%':>8} {'Days':>5} {'Reason':<25}")
-        w(f"  {'─'*8} {'─'*12} {'─'*12} {'─'*8} {'─'*5} {'─'*25}")
+        w(f"  {'─' * 8} {'─' * 12} {'─' * 12} {'─' * 8} {'─' * 5} {'─' * 25}")
         for t in sample:
             w(f"  {t.ticker:<8} {t.entry_date:>12} {t.exit_date or 'OPEN':>12} {t.pnl_pct or 0:>+7.2f}% {t.holding_days or 0:>5} {(t.exit_reason or ''):<25}")
     else:

@@ -20,11 +20,18 @@ class TechnicalIndicators:
 
     # Expected output columns from compute_all
     REQUIRED_COLUMNS = [
-        "EMA_9", "EMA_21",
-        "MACD_12_26_9", "MACDh_12_26_9", "MACDs_12_26_9",
+        "EMA_9",
+        "EMA_21",
+        "MACD_12_26_9",
+        "MACDh_12_26_9",
+        "MACDs_12_26_9",
         "RSI_14",
-        "STOCHRSIk_14_14_3_3", "STOCHRSId_14_14_3_3",
-        "BBL_20_2.0_2.0", "BBM_20_2.0_2.0", "BBU_20_2.0_2.0", "BBP_20_2.0_2.0",
+        "STOCHRSIk_14_14_3_3",
+        "STOCHRSId_14_14_3_3",
+        "BBL_20_2.0_2.0",
+        "BBM_20_2.0_2.0",
+        "BBU_20_2.0_2.0",
+        "BBP_20_2.0_2.0",
         "ATRr_14",
         "OBV",
         "VOL_SMA_5",
@@ -61,15 +68,11 @@ class TechnicalIndicators:
         missing = [col for col in critical if col not in df.columns or pd.isna(last.get(col))]
 
         if missing:
-            raise CalculationError(
-                f"Critical indicator columns are NaN on last row: {missing}"
-            )
+            raise CalculationError(f"Critical indicator columns are NaN on last row: {missing}")
 
         # Check ATR too small (< 10 Rupiah)
         atr_val = last.get("ATRr_14", 0)
         if atr_val is not None and atr_val < 10:
-            raise CalculationError(
-                f"ATR too small ({atr_val:.2f}) — volatility too low for swing trading"
-            )
+            raise CalculationError(f"ATR too small ({atr_val:.2f}) — volatility too low for swing trading")
 
         return df

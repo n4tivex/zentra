@@ -56,9 +56,7 @@ class TestRunLogsFailureSemantics:
 class TestRunLocks:
     def test_duplicate_run_lock_returns_none(self):
         client = MagicMock()
-        client.table.return_value.insert.return_value.execute.side_effect = Exception(
-            "duplicate key value violates unique constraint 23505"
-        )
+        client.table.return_value.insert.return_value.execute.side_effect = Exception("duplicate key value violates unique constraint 23505")
         repo = RunLocksRepo(client)
 
         assert repo.acquire(mode="morning", run_date="2026-05-18", slot="morning") is None
@@ -71,9 +69,7 @@ class TestSignalIdempotency:
     def test_insert_conflict_returns_existing_active_signal(self):
         existing = {"id": "sig-1", "ticker": "BBCA", "status": "ACTIVE", "signal_type": "BUY"}
         client = MagicMock()
-        client.table.return_value.insert.return_value.execute.side_effect = Exception(
-            "duplicate key value violates unique constraint 23505"
-        )
+        client.table.return_value.insert.return_value.execute.side_effect = Exception("duplicate key value violates unique constraint 23505")
 
         class Repo(SignalsRepo):
             def __init__(self, mock_client):
@@ -97,9 +93,7 @@ class TestSignalIdempotency:
 
     def test_insert_conflict_without_existing_signal_raises_conflict_error(self):
         client = MagicMock()
-        client.table.return_value.insert.return_value.execute.side_effect = Exception(
-            "duplicate key value violates unique constraint 23505"
-        )
+        client.table.return_value.insert.return_value.execute.side_effect = Exception("duplicate key value violates unique constraint 23505")
 
         class Repo(SignalsRepo):
             def get_active_signal(self, ticker: str, signal_type: str | None = "BUY"):
@@ -246,30 +240,42 @@ class TestReadinessAndValidation:
             failed_tickers=["C", "D", "E"],
         )
 
-        assert ZENTRAOrchestrator._classify_run_status(
-            failed_count=0,
-            coverage=full,
-            telegram_failed=0,
-            persistence_failures=[],
-        ) == "SUCCESS"
-        assert ZENTRAOrchestrator._classify_run_status(
-            failed_count=0,
-            coverage=partial,
-            telegram_failed=0,
-            persistence_failures=[],
-        ) == "PARTIAL"
-        assert ZENTRAOrchestrator._classify_run_status(
-            failed_count=0,
-            coverage=broken,
-            telegram_failed=0,
-            persistence_failures=[],
-        ) == "FAILED"
-        assert ZENTRAOrchestrator._classify_run_status(
-            failed_count=0,
-            coverage=full,
-            telegram_failed=1,
-            persistence_failures=[],
-        ) == "PARTIAL"
+        assert (
+            ZENTRAOrchestrator._classify_run_status(
+                failed_count=0,
+                coverage=full,
+                telegram_failed=0,
+                persistence_failures=[],
+            )
+            == "SUCCESS"
+        )
+        assert (
+            ZENTRAOrchestrator._classify_run_status(
+                failed_count=0,
+                coverage=partial,
+                telegram_failed=0,
+                persistence_failures=[],
+            )
+            == "PARTIAL"
+        )
+        assert (
+            ZENTRAOrchestrator._classify_run_status(
+                failed_count=0,
+                coverage=broken,
+                telegram_failed=0,
+                persistence_failures=[],
+            )
+            == "FAILED"
+        )
+        assert (
+            ZENTRAOrchestrator._classify_run_status(
+                failed_count=0,
+                coverage=full,
+                telegram_failed=1,
+                persistence_failures=[],
+            )
+            == "PARTIAL"
+        )
 
     def test_indicator_schema_rejects_nan_last_row(self, bullish_df):
         df = bullish_df.copy()

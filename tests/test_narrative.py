@@ -131,10 +131,7 @@ class TestNarrativeGenerator:
         active = {"entry_price": 9000}
         narrative = generator.generate_exit(result, active)
         # Should mention RSI or overbought or MACD
-        assert any(
-            term in narrative.lower()
-            for term in ["rsi", "overbought", "macd", "momentum"]
-        )
+        assert any(term in narrative.lower() for term in ["rsi", "overbought", "macd", "momentum"])
 
     def test_expired_narrative(self, generator):
         """Expired signal notification."""

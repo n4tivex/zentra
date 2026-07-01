@@ -45,13 +45,7 @@ class RunLocksRepo:
         # Layer 1: Check for recent lock (sequential duplicate guard)
         try:
             cutoff = (now - timedelta(hours=LOCK_THROTTLE_HOURS)).isoformat()
-            recent = (
-                self._client.table(self._table)
-                .select("id, owner_run_id")
-                .eq("lock_key", lock_key)
-                .gte("acquired_at", cutoff)
-                .execute()
-            )
+            recent = self._client.table(self._table).select("id, owner_run_id").eq("lock_key", lock_key).gte("acquired_at", cutoff).execute()
             if recent.data:
                 existing = recent.data[0]
                 # If run_logs_repo is available, check if the previous run FAILED
@@ -63,9 +57,7 @@ class RunLocksRepo:
                             is_failed = bool(prev_run) and prev_run.get("status") == "FAILED"
                             is_stale_running = False
                             if prev_run and prev_run.get("status") == "RUNNING" and prev_run.get("started_at"):
-                                started = datetime.fromisoformat(
-                                    prev_run["started_at"].replace("Z", "+00:00")
-                                )
+                                started = datetime.fromisoformat(prev_run["started_at"].replace("Z", "+00:00"))
                                 is_stale_running = (now - started) > timedelta(minutes=STALE_RUN_MINUTES)
 
                             if is_failed or is_stale_running:
@@ -151,12 +143,7 @@ class RunLocksRepo:
         """Delete run locks older than retention_days."""
         cutoff = (datetime.now(tz=UTC) - timedelta(days=retention_days)).isoformat()
         try:
-            before = (
-                self._client.table(self._table)
-                .select("id")
-                .lt("acquired_at", cutoff)
-                .execute()
-            )
+            before = self._client.table(self._table).select("id").lt("acquired_at", cutoff).execute()
             rows_to_delete = len(before.data) if before.data else 0
             if rows_to_delete == 0:
                 return 0

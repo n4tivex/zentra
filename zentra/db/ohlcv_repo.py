@@ -79,15 +79,17 @@ class OHLCVRepo:
 
         rows = []
         for date, row in df.iterrows():
-            rows.append({
-                "ticker": ticker,
-                "trade_date": pd.Timestamp(date).strftime("%Y-%m-%d"),
-                "open": round(float(row["open"]), 2),
-                "high": round(float(row["high"]), 2),
-                "low": round(float(row["low"]), 2),
-                "close": round(float(row["close"]), 2),
-                "volume": int(row["volume"]),
-            })
+            rows.append(
+                {
+                    "ticker": ticker,
+                    "trade_date": pd.Timestamp(date).strftime("%Y-%m-%d"),
+                    "open": round(float(row["open"]), 2),
+                    "high": round(float(row["high"]), 2),
+                    "low": round(float(row["low"]), 2),
+                    "close": round(float(row["close"]), 2),
+                    "volume": int(row["volume"]),
+                }
+            )
 
         try:
             self._client.table(self._table).upsert(
@@ -103,12 +105,7 @@ class OHLCVRepo:
         cutoff = (today_jakarta() - timedelta(days=retention_days)).strftime("%Y-%m-%d")
 
         try:
-            before = (
-                self._client.table(self._table)
-                .select("trade_date")
-                .lt("trade_date", cutoff)
-                .execute()
-            )
+            before = self._client.table(self._table).select("trade_date").lt("trade_date", cutoff).execute()
 
             rows_to_delete = len(before.data) if before.data else 0
 

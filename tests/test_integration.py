@@ -37,6 +37,7 @@ from zentra.exceptions import CalculationError, DataIntegrityError
 # 1. Duplicate run — dedup prevents double signals
 # ---------------------------------------------------------------------------
 
+
 class TestDuplicateSignalDedup:
     def test_create_signal_blocks_duplicate_active(self):
         """create_signal should not insert if an ACTIVE signal already exists."""
@@ -46,8 +47,9 @@ class TestDuplicateSignalDedup:
         existing = {"id": "abc-123", "ticker": "BBCA", "status": "ACTIVE", "signal_type": "BUY"}
 
         # Mock get_active_signal to return an existing signal
-        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value \
-            .order.return_value.limit.return_value.execute.return_value.data = [existing]
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = [  # noqa: E501
+            existing
+        ]
 
         result_obj = SignalResult(
             ticker="BBCA",
@@ -69,6 +71,7 @@ class TestDuplicateSignalDedup:
 # 2. Stale cache — stale data is rejected
 # ---------------------------------------------------------------------------
 
+
 class TestStaleData:
     def test_validator_rejects_stale_data(self, stale_df):
         """Data older than STALE_DATA_THRESHOLD_DAYS should be rejected."""
@@ -82,10 +85,12 @@ class TestStaleData:
 # 3. Holiday/weekend — market closed detection
 # ---------------------------------------------------------------------------
 
+
 class TestMarketClosedDetection:
     def test_weekend_detection_saturday(self):
         """Saturday should be detected as weekend."""
         from zentra.runtime import is_weekend_jakarta
+
         # Find next Saturday
         d = date(2026, 5, 16)  # Saturday
         assert is_weekend_jakarta(d) is True
@@ -93,12 +98,14 @@ class TestMarketClosedDetection:
     def test_weekend_detection_sunday(self):
         """Sunday should be detected as weekend."""
         from zentra.runtime import is_weekend_jakarta
+
         d = date(2026, 5, 17)  # Sunday
         assert is_weekend_jakarta(d) is True
 
     def test_weekday_not_weekend(self):
         """Monday should not be weekend."""
         from zentra.runtime import is_weekend_jakarta
+
         d = date(2026, 5, 18)  # Monday
         assert is_weekend_jakarta(d) is False
 
@@ -107,17 +114,21 @@ class TestMarketClosedDetection:
 # 4. Zero/NaN indicators — graceful skip
 # ---------------------------------------------------------------------------
 
+
 class TestZeroNaNIndicators:
     def test_all_nan_close_raises_error(self):
         """DataFrame with NaN critical data should raise an error during processing."""
         dates = pd.date_range("2026-03-01", periods=60, freq="B")
-        df = pd.DataFrame({
-            "open": [float("nan")] * 60,
-            "high": [float("nan")] * 60,
-            "low": [float("nan")] * 60,
-            "close": [float("nan")] * 60,
-            "volume": [0] * 60,
-        }, index=dates)
+        df = pd.DataFrame(
+            {
+                "open": [float("nan")] * 60,
+                "high": [float("nan")] * 60,
+                "low": [float("nan")] * 60,
+                "close": [float("nan")] * 60,
+                "volume": [0] * 60,
+            },
+            index=dates,
+        )
 
         indicators = TechnicalIndicators()
         # pandas_ta raises TypeError or CalculationError for all-NaN input
@@ -128,13 +139,16 @@ class TestZeroNaNIndicators:
         """Scorer should handle DataFrame without indicator columns gracefully."""
         dates = pd.date_range("2026-03-01", periods=60, freq="B")
         close = [1000 + i * 10 for i in range(60)]
-        df = pd.DataFrame({
-            "open": close,
-            "high": [c + 50 for c in close],
-            "low": [c - 50 for c in close],
-            "close": close,
-            "volume": [1000000] * 60,
-        }, index=dates)
+        df = pd.DataFrame(
+            {
+                "open": close,
+                "high": [c + 50 for c in close],
+                "low": [c - 50 for c in close],
+                "close": close,
+                "volume": [1000000] * 60,
+            },
+            index=dates,
+        )
 
         # Score without indicator enrichment — should handle gracefully
         scorer = SignalScorer()
@@ -145,6 +159,7 @@ class TestZeroNaNIndicators:
 # ---------------------------------------------------------------------------
 # 5. Telegram retry — retry logic
 # ---------------------------------------------------------------------------
+
 
 class TestTelegramRetry:
     @pytest.mark.asyncio
@@ -178,6 +193,7 @@ class TestTelegramRetry:
 # 6. Supabase insert/update failure — error handling
 # ---------------------------------------------------------------------------
 
+
 class TestSupabaseFailure:
     def test_create_signal_raises_database_error(self):
         """create_signal should raise DatabaseError on insert failure."""
@@ -187,8 +203,7 @@ class TestSupabaseFailure:
         repo = SignalsRepo(mock_client)
 
         # No active signal
-        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value \
-            .order.return_value.limit.return_value.execute.return_value.data = []
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
 
         # Insert fails
         mock_client.table.return_value.insert.return_value.execute.side_effect = Exception("DB error")
@@ -219,6 +234,7 @@ class TestSupabaseFailure:
 # ---------------------------------------------------------------------------
 # 7. Morning partial candle — today's candle is dropped
 # ---------------------------------------------------------------------------
+
 
 class TestMorningPartialCandle:
     def test_morning_mode_drops_today_candle(self, bullish_df):
@@ -260,6 +276,7 @@ class TestMorningPartialCandle:
 # ---------------------------------------------------------------------------
 # 8. Exit priority resolution — SL/TP > hard > soft
 # ---------------------------------------------------------------------------
+
 
 class TestExitPriorityResolution:
     def test_sl_has_highest_priority(self, exit_setup_df):
@@ -345,6 +362,7 @@ class TestExitPriorityResolution:
 # Schema contract tests (P1-10)
 # ---------------------------------------------------------------------------
 
+
 class TestSchemaContracts:
     def test_ohlcv_schema_valid(self, bullish_df):
         """Valid OHLCV DataFrame should pass schema validation."""
@@ -375,6 +393,7 @@ class TestSchemaContracts:
 # State transition tests (P1-13)
 # ---------------------------------------------------------------------------
 
+
 class TestSignalLifecycle:
     def test_valid_transitions(self):
         """All valid transitions should be defined."""
@@ -393,6 +412,7 @@ class TestSignalLifecycle:
     def test_invalid_transition_raises(self):
         """Invalid transition should raise DatabaseError."""
         from zentra.exceptions import DatabaseError
+
         mock_client = MagicMock()
         repo = SignalsRepo(mock_client)
 

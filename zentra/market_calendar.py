@@ -231,11 +231,7 @@ class MarketCalendar:
 def _bundled_2026_closed_dates() -> frozenset[date]:
     payload = _load_calendar_payload(BUNDLED_CALENDAR_PATH)
     records = payload["closures"]
-    return frozenset(
-        _coerce_date(str(r["date"]))
-        for r in records
-        if int(r.get("effective_year") or _coerce_date(str(r["date"])).year) == 2026
-    )
+    return frozenset(_coerce_date(str(r["date"])) for r in records if int(r.get("effective_year") or _coerce_date(str(r["date"])).year) == 2026)
 
 
 DEFAULT_CLOSED_DATES_2026 = _bundled_2026_closed_dates()

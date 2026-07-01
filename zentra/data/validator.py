@@ -55,9 +55,7 @@ class DataValidator:
             ticker_log.warning("negative_volume_fixed", count=count)
 
         if len(df_clean) < DATA.MIN_TRADING_DAYS:
-            errors.append(
-                f"Insufficient data: {len(df_clean)} rows (minimum {DATA.MIN_TRADING_DAYS})"
-            )
+            errors.append(f"Insufficient data: {len(df_clean)} rows (minimum {DATA.MIN_TRADING_DAYS})")
             return ValidationResult(False, warnings, errors, df_clean)
 
         if (df_clean["close"] <= 0).any():
@@ -86,23 +84,17 @@ class DataValidator:
         days_old = (today - last_date).days
 
         if days_old > DATA.STALE_DATA_THRESHOLD_DAYS:
-            stale_message = (
-                f"Data is {days_old} days old (threshold: {DATA.STALE_DATA_THRESHOLD_DAYS})"
-            )
+            stale_message = f"Data is {days_old} days old (threshold: {DATA.STALE_DATA_THRESHOLD_DAYS})"
             if stale_as_error:
                 errors.append(stale_message)
             else:
                 warnings.append(stale_message)
 
         if days_old > 1:
-            warnings.append(
-                f"Data may be stale: last date is {last_date} ({days_old} days ago)"
-            )
+            warnings.append(f"Data may be stale: last date is {last_date} ({days_old} days ago)")
 
         if expected_last_date is not None and last_date < expected_last_date:
-            errors.append(
-                f"Data is behind expected trading day: last={last_date}, expected={expected_last_date}"
-            )
+            errors.append(f"Data is behind expected trading day: last={last_date}, expected={expected_last_date}")
 
         dates = pd.Series(df_clean.index)
         gaps = dates.diff().dt.days

@@ -32,12 +32,7 @@ class SignalsRepo:
 
     def get_active_signal(self, ticker: str, signal_type: str | None = "BUY") -> dict | None:
         try:
-            query = (
-                self._client.table(self._table)
-                .select("*")
-                .eq("ticker", ticker)
-                .eq("status", SignalStatus.ACTIVE.value)
-            )
+            query = self._client.table(self._table).select("*").eq("ticker", ticker).eq("status", SignalStatus.ACTIVE.value)
             if signal_type:
                 query = query.eq("signal_type", signal_type)
             result = query.order("created_at", desc=True).limit(1).execute()
@@ -113,9 +108,7 @@ class SignalsRepo:
                     )
                     return existing_after_conflict
                 log.error("db_create_signal_conflict_unresolved", ticker=result.ticker, error=str(e))
-                raise DatabaseConflictError(
-                    f"Signal insert conflict for {result.ticker}, but no active BUY was found"
-                ) from e
+                raise DatabaseConflictError(f"Signal insert conflict for {result.ticker}, but no active BUY was found") from e
             log.error("db_create_signal_failed", ticker=result.ticker, error=str(e))
             raise DatabaseInsertError(f"Failed to create signal for {result.ticker}") from e
 
@@ -124,10 +117,7 @@ class SignalsRepo:
         """Validate that a status transition is legal per P1-13 lifecycle."""
         allowed = VALID_TRANSITIONS.get(current, ())
         if target not in allowed:
-            raise DatabaseError(
-                f"Invalid signal transition: {current.value} → {target.value}. "
-                f"Allowed: {[s.value for s in allowed]}"
-            )
+            raise DatabaseError(f"Invalid signal transition: {current.value} → {target.value}. Allowed: {[s.value for s in allowed]}")
 
     def close_signal(
         self,
@@ -142,12 +132,20 @@ class SignalsRepo:
         exit_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price else 0
 
         try:
-            resp = self._client.table(self._table).update({
-                "status": status.value,
-                "exit_price": exit_price,
-                "exit_pct": round(exit_pct, 2),
-                "closed_at": datetime.now(tz=UTC).isoformat(),
-            }).eq("id", signal_id).eq("status", SignalStatus.ACTIVE.value).execute()
+            resp = (
+                self._client.table(self._table)
+                .update(
+                    {
+                        "status": status.value,
+                        "exit_price": exit_price,
+                        "exit_pct": round(exit_pct, 2),
+                        "closed_at": datetime.now(tz=UTC).isoformat(),
+                    }
+                )
+                .eq("id", signal_id)
+                .eq("status", SignalStatus.ACTIVE.value)
+                .execute()
+            )
 
             if isinstance(resp.data, list) and len(resp.data) == 0:
                 existing = self._get_signal_by_id(signal_id)
@@ -176,15 +174,10 @@ class SignalsRepo:
         cutoff_watch = now - timedelta(days=1)
 
         try:
-            result = (
-                self._client.table(self._table)
-                .select("*")
-                .eq("status", SignalStatus.ACTIVE.value)
-                .execute()
-            )
+            result = self._client.table(self._table).select("*").eq("status", SignalStatus.ACTIVE.value).execute()
 
             expired: list[dict] = []
-            for row in (result.data or []):
+            for row in result.data or []:
                 created = row.get("created_at", "")
                 if not created:
                     continue
@@ -195,10 +188,18 @@ class SignalsRepo:
                 expired.append(row)
                 # Validate transition
                 self._validate_transition(SignalStatus.ACTIVE, SignalStatus.EXPIRED)
-                resp = self._client.table(self._table).update({
-                    "status": SignalStatus.EXPIRED.value,
-                    "closed_at": now.isoformat(),
-                }).eq("id", row["id"]).eq("status", SignalStatus.ACTIVE.value).execute()
+                resp = (
+                    self._client.table(self._table)
+                    .update(
+                        {
+                            "status": SignalStatus.EXPIRED.value,
+                            "closed_at": now.isoformat(),
+                        }
+                    )
+                    .eq("id", row["id"])
+                    .eq("status", SignalStatus.ACTIVE.value)
+                    .execute()
+                )
                 if isinstance(resp.data, list) and len(resp.data) == 0:
                     log.info("signal_expire_idempotent", signal_id=row["id"])
 
@@ -214,13 +215,7 @@ class SignalsRepo:
 
     def _get_signal_by_id(self, signal_id: str) -> dict | None:
         try:
-            result = (
-                self._client.table(self._table)
-                .select("*")
-                .eq("id", signal_id)
-                .limit(1)
-                .execute()
-            )
+            result = self._client.table(self._table).select("*").eq("id", signal_id).limit(1).execute()
             return result.data[0] if result.data else None
         except Exception as e:
             log.error("db_get_signal_by_id_failed", signal_id=signal_id, error=str(e))
@@ -231,11 +226,14 @@ class SignalsRepo:
             result = (
                 self._client.table(self._table)
                 .select("*")
-                .in_("status", [
-                    SignalStatus.CLOSED_TP.value,
-                    SignalStatus.CLOSED_SL.value,
-                    SignalStatus.CLOSED_EXIT_SIGNAL.value,
-                ])
+                .in_(
+                    "status",
+                    [
+                        SignalStatus.CLOSED_TP.value,
+                        SignalStatus.CLOSED_SL.value,
+                        SignalStatus.CLOSED_EXIT_SIGNAL.value,
+                    ],
+                )
                 .execute()
             )
             return result.data or []
@@ -264,12 +262,7 @@ class SignalsRepo:
 
     def get_active_signals_count(self) -> int:
         try:
-            result = (
-                self._client.table(self._table)
-                .select("id")
-                .eq("status", SignalStatus.ACTIVE.value)
-                .execute()
-            )
+            result = self._client.table(self._table).select("id").eq("status", SignalStatus.ACTIVE.value).execute()
             return len(result.data) if result.data else 0
         except Exception as e:
             log.error("db_get_active_count_failed", error=str(e))

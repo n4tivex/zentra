@@ -54,11 +54,7 @@ class SignalScorer:
             if ema_fast > ema_slow:
                 scores["ema"] = 15
             elif abs(ema_gap_pct) <= 0.02:
-                if (
-                    self._is_valid_number(prev_ema_fast)
-                    and self._is_valid_number(prev_ema_slow)
-                    and float(prev_ema_fast) < float(prev_ema_slow)
-                ):
+                if self._is_valid_number(prev_ema_fast) and self._is_valid_number(prev_ema_slow) and float(prev_ema_fast) < float(prev_ema_slow):
                     scores["ema"] = 10
                 else:
                     scores["ema"] = 8
@@ -178,7 +174,7 @@ class SignalScorer:
 
         total_score = sum(scores.values())
         if not is_exit_check and self._is_valid_number(close) and self._is_valid_number(ema_fast) and float(close) < float(ema_fast):
-                total_score -= 20
+            total_score -= 20
 
         confluence_count = sum(1 for key in ["ema", "macd", "rsi", "bb", "volume"] if scores.get(key, 0) > 0)
 
@@ -194,9 +190,7 @@ class SignalScorer:
             "macd_crossed_up": macd_crossed_up,
             "bb_lower": round(float(bbl_f), 2) if self._is_valid_number(bbl) else 0,
             "bb_upper": round(float(bbu_f), 2) if self._is_valid_number(bbu) else 0,
-            "bb_percent": round(float(last.get("BBP_20_2.0_2.0", 0)), 4)
-            if self._is_valid_number(last.get("BBP_20_2.0_2.0"))
-            else 0,
+            "bb_percent": round(float(last.get("BBP_20_2.0_2.0", 0)), 4) if self._is_valid_number(last.get("BBP_20_2.0_2.0")) else 0,
             "atr_14": round(float(atr), 2) if self._is_valid_number(atr) else 0,
             "obv": int(last.get("OBV", 0) or 0),
             "volume_ratio": round(float(volume_ratio), 2) if volume_ratio else 0,
@@ -239,9 +233,7 @@ class SignalScorer:
 
         return result
 
-    def check_exit(
-        self, ticker: str, df: pd.DataFrame, active_signal: dict, days_held: int = 99
-    ) -> SignalResult | None:
+    def check_exit(self, ticker: str, df: pd.DataFrame, active_signal: dict, days_held: int = 99) -> SignalResult | None:
         """Check if an active signal should be exited."""
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) >= 2 else last

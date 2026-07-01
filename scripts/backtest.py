@@ -46,8 +46,7 @@ def main() -> None:
         f.write(report)
 
     print(f"\nReport saved to: {args.output}")
-    print(f"Signals: {result.total_signals}, Win rate: {result.win_rate:.1f}%, "
-          f"Profit factor: {result.profit_factor:.2f}")
+    print(f"Signals: {result.total_signals}, Win rate: {result.win_rate:.1f}%, Profit factor: {result.profit_factor:.2f}")
 
 
 if __name__ == "__main__":

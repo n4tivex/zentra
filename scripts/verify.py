@@ -95,8 +95,12 @@ def main() -> None:
     if args.skip_backtest:
         print("\nSkipping backtest (--skip-backtest)")
         from zentra.backtest.engine import BacktestResult
+
         bt_result = BacktestResult(
-            start_date="N/A", end_date="N/A", tickers_tested=0, trading_days=0,
+            start_date="N/A",
+            end_date="N/A",
+            tickers_tested=0,
+            trading_days=0,
         )
     else:
         bt_result = run_backtest(months=args.months, tickers=args.tickers)
