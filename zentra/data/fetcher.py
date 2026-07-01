@@ -238,7 +238,7 @@ class MarketDataFetcher:
         df = df.copy()
 
         if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(-1)
+            df.columns = df.columns.get_level_values(0)
 
         df.columns = [c.lower().strip() for c in df.columns]
         if "adj close" in df.columns and "close" not in df.columns:

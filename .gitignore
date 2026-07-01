@@ -39,6 +39,7 @@ AGENTS.md
 
 # Sisyphus planning artifacts
 .sisyphus/
+.omo/
 
 # Ruff formatter/linter cache
 .ruff_cache/

@@ -125,6 +125,15 @@ class ZENTRAOrchestrator:
             candidate = pd.Timestamp(df.index[-1]).date()
             if latest_trade_date is None or candidate > latest_trade_date:
                 latest_trade_date = candidate
+        if all_data and latest_trade_date is None:
+            log.warning(
+                "all_data_empty",
+                phase="data_readiness",
+                total=len(all_data),
+                empty_count=sum(
+                    1 for df in all_data.values() if df is None or df.empty
+                ),
+            )
         return latest_trade_date
 
     def _data_readiness_status(
