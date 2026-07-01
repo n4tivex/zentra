@@ -1,7 +1,14 @@
 """Production preflight checks for ZENTRA.
 
-Checks environment, calendar source, Supabase reachability, and Telegram
-credentials. Use --skip-network for CI or local offline validation.
+Validates the following before a production scan:
+  - Environment variables (SUPABASE_URL, SUPABASE_SERVICE_KEY, TELEGRAM_*)
+  - Bundled IDX holiday calendar JSON (well-formedness)
+  - MarketCalendar loading from environment config
+  - Supabase connectivity (via a lightweight query on run_logs)
+  - Telegram API reachability (via get_me)
+
+Use --skip-network to skip Supabase and Telegram checks in CI or local
+offline validation.
 """
 
 from __future__ import annotations
@@ -35,8 +42,27 @@ def _check_supabase() -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run ZENTRA production preflight checks")
-    parser.add_argument("--skip-network", action="store_true", help="Skip Supabase and Telegram probes")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run ZENTRA production preflight checks. Validates environment variables, "
+            "calendar integrity, Supabase reachability, and Telegram connectivity before "
+            "a production scan."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  python scripts/preflight.py                    Full preflight (env + calendar + network)\n"
+            "  python scripts/preflight.py --skip-network     Offline checks only (env, calendar JSON, calendar load)\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--skip-network",
+        action="store_true",
+        help=(
+            "Skip Supabase connectivity and Telegram API probes. Useful for CI pipelines, "
+            "local development, or offline environments where network services are unavailable."
+        ),
+    )
     args = parser.parse_args()
 
     load_dotenv()
