@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import zentra.config
 from zentra.backtest.engine import BacktestEngine, BacktestResult
-from zentra.config import SCORING, TICKERS
+from zentra.config import TICKERS
 
 
 @dataclass
@@ -26,7 +27,7 @@ class TuneCombo:
 
 
 COMBOS = [
-    TuneCombo("A_baseline",      buy_threshold=70, min_confluence=3, sl_atr=1.5, tp_atr=2.5),
+    TuneCombo("A_baseline", buy_threshold=70, min_confluence=3, sl_atr=1.5, tp_atr=2.5),
     TuneCombo("C_buy60_sl1.5_tp2.5", buy_threshold=60, min_confluence=3, sl_atr=1.5, tp_atr=2.5),
     TuneCombo("C_buy60_sl1.5_tp3.0", buy_threshold=60, min_confluence=3, sl_atr=1.5, tp_atr=3.0),
     TuneCombo("C_buy60_sl1.5_tp2.0", buy_threshold=60, min_confluence=3, sl_atr=1.5, tp_atr=2.0),
@@ -38,12 +39,14 @@ COMBOS = [
 
 
 def patch_scoring(combo: TuneCombo) -> None:
-    """Monkey-patch SCORING config for this combo."""
-    # SCORING is frozen dataclass, so we use object.__setattr__
-    object.__setattr__(SCORING, "BUY_THRESHOLD", combo.buy_threshold)
-    object.__setattr__(SCORING, "MIN_CONFLUENCE", combo.min_confluence)
-    object.__setattr__(SCORING, "SL_ATR_MULTIPLIER", combo.sl_atr)
-    object.__setattr__(SCORING, "TP_ATR_MULTIPLIER", combo.tp_atr)
+    """Create a new SCORING config with combo params using dataclasses.replace()."""
+    zentra.config.SCORING = replace(
+        zentra.config.SCORING,
+        BUY_THRESHOLD=combo.buy_threshold,
+        MIN_CONFLUENCE=combo.min_confluence,
+        SL_ATR_MULTIPLIER=combo.sl_atr,
+        TP_ATR_MULTIPLIER=combo.tp_atr,
+    )
 
 
 def main() -> None:
@@ -64,8 +67,7 @@ def main() -> None:
     results: list[tuple[TuneCombo, BacktestResult]] = []
 
     for i, combo in enumerate(COMBOS):
-        print(f"[{i+1}/{len(COMBOS)}] Testing {combo.name} "
-              f"(Buy={combo.buy_threshold}, Conf={combo.min_confluence}, SL={combo.sl_atr}x, TP={combo.tp_atr}x)")
+        print(f"[{i + 1}/{len(COMBOS)}] Testing {combo.name} (Buy={combo.buy_threshold}, Conf={combo.min_confluence}, SL={combo.sl_atr}x, TP={combo.tp_atr}x)")
 
         # Patch config
         patch_scoring(combo)
@@ -75,11 +77,13 @@ def main() -> None:
         try:
             result = engine2.run(tickers=tickers, months=months, prefetched_data=all_data)
             results.append((combo, result))
-            print(f"   -> Signals={result.total_signals}, "
-                  f"WinRate={result.win_rate:.1f}%, "
-                  f"PF={result.profit_factor:.2f}, "
-                  f"DD={result.max_drawdown_pct:.1f}%, "
-                  f"Return={result.total_return_pct:+.1f}%")
+            print(
+                f"   -> Signals={result.total_signals}, "
+                f"WinRate={result.win_rate:.1f}%, "
+                f"PF={result.profit_factor:.2f}, "
+                f"DD={result.max_drawdown_pct:.1f}%, "
+                f"Return={result.total_return_pct:+.1f}%"
+            )
         except Exception as e:
             print(f"   -> ERROR: {e}")
 
@@ -87,8 +91,7 @@ def main() -> None:
     print("\n" + "=" * 80)
     print("  RESULTS COMPARISON")
     print("=" * 80)
-    header = (f"  {'Name':<22} {'Buy':>4} {'Conf':>4} {'SL':>4} {'TP':>4} "
-              f"{'Sigs':>5} {'Win%':>6} {'PF':>6} {'DD%':>6} {'Ret%':>7} {'Status':>8}")
+    header = f"  {'Name':<22} {'Buy':>4} {'Conf':>4} {'SL':>4} {'TP':>4} {'Sigs':>5} {'Win%':>6} {'PF':>6} {'DD%':>6} {'Ret%':>7} {'Status':>8}"
     print(header)
     print("  " + "-" * 80)
 
@@ -103,19 +106,16 @@ def main() -> None:
         all_pass = wr_pass and pf_pass and dd_pass
 
         # Composite: weight profit factor heavily, then win rate, then drawdown
-        composite = (
-            result.profit_factor * 40
-            + result.win_rate * 1.0
-            - result.max_drawdown_pct * 0.5
-            + result.total_return_pct * 0.3
-        )
+        composite = result.profit_factor * 40 + result.win_rate * 1.0 - result.max_drawdown_pct * 0.5 + result.total_return_pct * 0.3
 
         status = "PASS" if all_pass else "FAIL"
 
         pf_str = f"{result.profit_factor:.2f}" if result.profit_factor != float("inf") else "INF"
-        print(f"  {combo.name:<22} {combo.buy_threshold:>4} {combo.min_confluence:>4} {combo.sl_atr:>4.1f} {combo.tp_atr:>4.1f} "
-              f"{result.total_signals:>5} {result.win_rate:>5.1f}% {pf_str:>6} {result.max_drawdown_pct:>5.1f}% "
-              f"{result.total_return_pct:>+6.1f}% {status:>8}")
+        print(
+            f"  {combo.name:<22} {combo.buy_threshold:>4} {combo.min_confluence:>4} {combo.sl_atr:>4.1f} {combo.tp_atr:>4.1f} "
+            f"{result.total_signals:>5} {result.win_rate:>5.1f}% {pf_str:>6} {result.max_drawdown_pct:>5.1f}% "
+            f"{result.total_return_pct:>+6.1f}% {status:>8}"
+        )
 
         if composite > best_score:
             best_score = composite
@@ -125,8 +125,7 @@ def main() -> None:
         combo, result = best
         print(f"\n  RECOMMENDED: {combo.name}")
         print(f"  Buy={combo.buy_threshold}, Conf={combo.min_confluence}, SL={combo.sl_atr}x, TP={combo.tp_atr}x")
-        print(f"  Win Rate={result.win_rate:.1f}%, PF={result.profit_factor:.2f}, "
-              f"DD={result.max_drawdown_pct:.1f}%, Return={result.total_return_pct:+.1f}%")
+        print(f"  Win Rate={result.win_rate:.1f}%, PF={result.profit_factor:.2f}, DD={result.max_drawdown_pct:.1f}%, Return={result.total_return_pct:+.1f}%")
 
     print()
 
