@@ -1,19 +1,14 @@
-"""ZENTRA Orchestrator — top-level coordinator for the analysis pipeline.
-
-Refactored per roadmap P1-9 (pipeline stages), P0-5 (exit classification),
-P1-8 (morning candle), P1-11 (skip reasons), P1-15 (admin isolation),
-P2-19 (structured logging), P2-21 (enum harmonization).
-"""
+"""ZENTRA Orchestrator — core coordinator with run orchestration."""
 
 from __future__ import annotations
 
 import os
 import time
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-import pandas as pd
 import structlog
 
+import zentra.orchestrator as _orch
 from zentra.analysis.indicators import TechnicalIndicators
 from zentra.analysis.scorer import SignalScorer
 from zentra.config import (
@@ -23,41 +18,24 @@ from zentra.config import (
     SignalStatus,
     SignalType,
     get_env,
-    validate_env,
 )
 from zentra.data.fetcher import FetchCoverage, MarketDataFetcher
-from zentra.data.schema import validate_indicator_schema, validate_ohlcv_schema
 from zentra.data.validator import DataValidator
-from zentra.db.client import get_client
 from zentra.db.ohlcv_repo import OHLCVRepo
 from zentra.db.run_locks_repo import RunLocksRepo
-from zentra.db.run_logs_repo import RunLogsRepo
-from zentra.db.signals_repo import SignalsRepo
-from zentra.exceptions import (
-    CalculationError,
-    ConfigurationError,
-    DataIntegrityError,
-    InsufficientDataError,
-    StaleDataError,
-)
+from zentra.exceptions import ConfigurationError
 from zentra.market_calendar import MarketCalendar
 from zentra.narrative.blocks import MARKET_CLOSED_HOLIDAY, MARKET_CLOSED_WEEKEND
 from zentra.narrative.generator import NarrativeGenerator
-from zentra.runtime import today_jakarta
 from zentra.telegram.formatter import (
-    _pct_str_human,
+    _pct_str,
     escape_markdown_v2,
     format_active_positions_message,
-    format_buy_message,
     format_daily_summary,
-    format_exit_message,
-    format_expired_message,
     format_no_signal_message,
     format_rupiah,
-    format_watch_message,
     format_weekly_performance_summary,
 )
-from zentra.telegram.sender import TelegramSender
 
 log = structlog.get_logger()
 
@@ -66,92 +44,9 @@ class ZENTRAOrchestrator:
     def __init__(self, mode: str = "morning", dry_run: bool = False) -> None:
         self._mode = mode
         self._dry_run = dry_run
-        self._today = today_jakarta().strftime("%Y-%m-%d")
+        self._today = _orch.today_jakarta().strftime("%Y-%m-%d")
         self._run_slot = os.getenv("ZENTRA_SCHEDULE_SLOT", mode)
         self._market_calendar = MarketCalendar.from_env()
-
-    async def _send_admin_alert(self, sender: TelegramSender | None, run_log, message: str, event: str) -> bool:
-        if not sender:
-            return False
-        try:
-            sent = await sender.send_admin_alert(escape_markdown_v2(message))
-            if not sent:
-                run_log.warning(event, phase="notify")
-            return bool(sent)
-        except Exception as e:
-            run_log.warning(event, phase="notify", error=str(e))
-            return False
-
-    async def _update_run_log(self, run_logs_repo, run_id: str | None, run_log, sender, **kwargs) -> bool:
-        if not run_logs_repo or not run_id:
-            return True
-        try:
-            run_logs_repo.update_run(run_id, **kwargs)
-            return True
-        except Exception as e:
-            run_log.error("run_log_update_failed", phase="persist", error=str(e))
-            await self._send_admin_alert(
-                sender,
-                run_log,
-                "\n".join(
-                    [
-                        "RUN LOG UPDATE FAILED",
-                        f"Run ID: {run_id}",
-                        f"Mode: {self._mode}",
-                        f"Date: {self._today}",
-                        "Category: db_update",
-                        f"Error: {e}",
-                    ]
-                ),
-                "admin_alert_failed_on_run_log_update",
-            )
-            return False
-
-    def _release_run_lock(self, locks_repo, run_lock: dict | None, run_log) -> bool:
-        if not locks_repo or not run_lock:
-            return True
-        try:
-            locks_repo.release(run_lock)
-            return True
-        except Exception as e:
-            run_log.error("run_lock_release_failed", phase="lock", error=str(e))
-            return False
-
-    def _latest_trade_date(self, all_data: dict[str, pd.DataFrame]) -> date | None:
-        latest_trade_date = None
-        for df in all_data.values():
-            if df is None or df.empty:
-                continue
-            candidate = pd.Timestamp(df.index[-1]).date()
-            if latest_trade_date is None or candidate > latest_trade_date:
-                latest_trade_date = candidate
-        if all_data and latest_trade_date is None:
-            log.warning(
-                "all_data_empty",
-                phase="data_readiness",
-                total=len(all_data),
-                empty_count=sum(
-                    1 for df in all_data.values() if df is None or df.empty
-                ),
-            )
-        return latest_trade_date
-
-    def _data_readiness_status(
-        self,
-        all_data: dict[str, pd.DataFrame],
-    ) -> tuple[str, date | None, date]:
-        expected_trade_date = self._market_calendar.expected_last_trade_day(
-            today_jakarta(),
-            mode=self._mode,
-        )
-        latest_trade_date = self._latest_trade_date(all_data)
-        if latest_trade_date is None:
-            return "provider_stale", None, expected_trade_date
-        if latest_trade_date >= expected_trade_date:
-            return "ready", latest_trade_date, expected_trade_date
-        if self._mode == "closing" and latest_trade_date == self._market_calendar.previous_trading_day(expected_trade_date):
-            return "market_data_pending", latest_trade_date, expected_trade_date
-        return "provider_stale", latest_trade_date, expected_trade_date
 
     @staticmethod
     def _classify_run_status(
@@ -161,12 +56,7 @@ class ZENTRAOrchestrator:
         telegram_failed: int,
         persistence_failures: list[str],
     ) -> str:
-        if (
-            failed_count == 0
-            and not coverage.is_partial
-            and telegram_failed == 0
-            and not persistence_failures
-        ):
+        if failed_count == 0 and not coverage.is_partial and telegram_failed == 0 and not persistence_failures:
             return RunStatus.SUCCESS.value
         if failed_count > 15 or coverage.coverage_ratio < 0.8:
             return RunStatus.FAILED.value
@@ -181,19 +71,19 @@ class ZENTRAOrchestrator:
         # --- Phase: Config validation ---
         if not self._dry_run:
             try:
-                validate_env()
+                _orch.validate_env()
             except ConfigurationError as e:
                 run_log.error("config_validation_failed", phase="init", error=str(e))
                 return False
 
         # --- Phase: Initialize services ---
         if not self._dry_run:
-            db = get_client()
-            signals_repo = SignalsRepo(db)
+            db = _orch.get_client()
+            signals_repo = _orch.SignalsRepo(db)
             ohlcv_repo = OHLCVRepo(db)
-            run_logs_repo = RunLogsRepo(db)
+            run_logs_repo = _orch.RunLogsRepo(db)
             locks_repo = RunLocksRepo(db)
-            sender = TelegramSender(
+            sender = _orch.TelegramSender(
                 bot_token=get_env("TELEGRAM_BOT_TOKEN"),
                 chat_id=get_env("TELEGRAM_CHAT_ID"),
                 admin_chat_id=get_env("TELEGRAM_ADMIN_CHAT_ID"),
@@ -295,7 +185,7 @@ class ZENTRAOrchestrator:
                 return updated
 
         # --- Phase: Market status check ---
-        market_status = self._market_calendar.closure_reason(today_jakarta())
+        market_status = self._market_calendar.closure_reason(_orch.today_jakarta())
         if market_status == "weekend":
             run_log.info("market_closed_weekend", phase="market_check")
             sent_ok = False
@@ -337,7 +227,7 @@ class ZENTRAOrchestrator:
         tickers = [single_ticker] if single_ticker else list(TICKERS)
         fetcher = MarketDataFetcher(ohlcv_repo=ohlcv_repo)
         coverage = FetchCoverage(requested_tickers=tickers)
-        expected_trade_date = self._market_calendar.expected_last_trade_day(today_jakarta(), mode=self._mode)
+        expected_trade_date = self._market_calendar.expected_last_trade_day(_orch.today_jakarta(), mode=self._mode)
 
         try:
             fetch_result = fetcher.fetch_all_with_coverage(tickers, min_latest_date=expected_trade_date)
@@ -412,10 +302,7 @@ class ZENTRAOrchestrator:
                 run_log,
                 sender,
                 status=RunStatus.FAILED.value,
-                error_message=(
-                    f"{data_readiness_status}: latest={latest_trade_date}, "
-                    f"expected={expected_trade_date}"
-                ),
+                error_message=(f"{data_readiness_status}: latest={latest_trade_date}, expected={expected_trade_date}"),
                 duration_seconds=time.time() - start_time,
                 fetched_count=coverage.fetched_count,
                 cached_count=coverage.cached_count,
@@ -573,7 +460,7 @@ class ZENTRAOrchestrator:
                     days_info = ""
                     if current_price and ep:
                         pnl_pct = (current_price - ep) / ep * 100
-                        pnl_str = _pct_str_human(pnl_pct)
+                        pnl_str = _pct_str(pnl_pct)
                         price_info = f" \u2192 {esc(format_rupiah(current_price))} \\({esc(pnl_str)}\\)"
                     if created_at:
                         try:
@@ -583,9 +470,7 @@ class ZENTRAOrchestrator:
                         except (ValueError, TypeError):
                             pass
 
-                    pos_lines.append(
-                        f"\u25b8 *\\${esc(t)}*: Entry {esc(format_rupiah(ep))}{price_info}{esc(days_info)}"
-                    )
+                    pos_lines.append(f"\u25b8 *\\${esc(t)}*: Entry {esc(format_rupiah(ep))}{price_info}{esc(days_info)}")
 
                 messages.append(
                     format_active_positions_message(
@@ -653,10 +538,7 @@ class ZENTRAOrchestrator:
                 try:
                     admin_alert_sent = await sender.send_admin_alert(
                         escape_markdown_v2(
-                            f"⚠️ HIGH FAILURE RATE\n"
-                            f"Mode: {self._mode}\n"
-                            f"Failed: {len(failed_tickers)}/{total} tickers\n"
-                            f"Tickers: {', '.join(failed_tickers[:10])}"
+                            f"⚠️ HIGH FAILURE RATE\nMode: {self._mode}\nFailed: {len(failed_tickers)}/{total} tickers\nTickers: {', '.join(failed_tickers[:10])}"
                         )
                     )
                 except Exception:
@@ -696,13 +578,7 @@ class ZENTRAOrchestrator:
             failed_fetch_tickers=failed_fetch_tickers,
             calendar_reason=market_status,
             data_readiness_status=data_readiness_status,
-            failure_category=(
-                "db_write"
-                if persistence_failures
-                else "partial_fetch"
-                if coverage.is_partial
-                else None
-            ),
+            failure_category=("db_write" if persistence_failures else "partial_fetch" if coverage.is_partial else None),
             admin_alert_sent=admin_alert_sent,
             error_message="; ".join(persistence_failures) if persistence_failures else None,
         )
@@ -725,260 +601,6 @@ class ZENTRAOrchestrator:
         released = self._release_run_lock(locks_repo, run_lock, run_log)
         return updated and released and run_status != RunStatus.FAILED.value
 
-    # --- Pipeline stage methods (P1-9) ---
-
-    def _process_ticker(
-        self,
-        *,
-        ticker: str,
-        all_data: dict[str, pd.DataFrame],
-        validator: DataValidator,
-        indicators: TechnicalIndicators,
-        scorer: SignalScorer,
-        narrative_gen: NarrativeGenerator,
-        signals_repo: SignalsRepo | None,
-        ohlcv_repo: OHLCVRepo | None,
-        ticker_log,
-    ) -> SignalResult | dict[str, str] | None:
-        """Process a single ticker through the full pipeline.
-
-        Returns:
-            SignalResult on success,
-            dict with skip/fail info,
-            None if nothing to report.
-        """
-        try:
-            # 1. Get raw data
-            df = all_data.get(ticker)
-            if df is None or df.empty:
-                return {"ticker": ticker, "status": "failed", "reason": "no_data"}
-
-            # 2. P1-8: Handle partial candle for morning mode
-            df = self._handle_partial_candle(df, ticker_log)
-            if df.empty:
-                return {"ticker": ticker, "status": "failed", "reason": "empty_after_candle_drop"}
-
-            # 3. Validate
-            validation = validator.validate(ticker, df)
-            if not validation.is_valid:
-                ticker_log.warning("validation_failed", phase="validate", errors=validation.errors)
-                return {"ticker": ticker, "status": "failed", "reason": f"validation: {validation.errors[0]}"}
-
-            for warning in validation.warnings:
-                ticker_log.warning("validation_warning", phase="validate", warning=warning)
-
-            # 4. Use cleaned DataFrame (P0-6: validator is source of truth for cleaning)
-            df_clean = validation.cleaned_df if validation.cleaned_df is not None else df
-
-            # 5. Validate OHLCV schema contract (P1-10)
-            try:
-                validate_ohlcv_schema(df_clean, ticker)
-            except DataIntegrityError as e:
-                ticker_log.warning("ohlcv_schema_failed", phase="validate", error=str(e))
-                return {"ticker": ticker, "status": "skipped", "reason": "schema_violation"}
-
-            # 6. Persist to cache
-            if ohlcv_repo and not self._dry_run:
-                try:
-                    ohlcv_repo.upsert_batch(ticker, df_clean)
-                except Exception as e:
-                    ticker_log.warning("cache_upsert_failed", phase="persist", error=str(e))
-
-            # 7. Enrich with indicators
-            df_ind = indicators.compute_all(df_clean)
-
-            # 8. Validate indicator schema (P1-10)
-            try:
-                validate_indicator_schema(df_ind, ticker)
-            except DataIntegrityError as e:
-                ticker_log.warning("indicator_schema_failed", phase="enrich", error=str(e))
-                return {"ticker": ticker, "status": "skipped", "reason": "indicator_schema_violation"}
-
-            # 9. Check for active signal (EXIT path or skip on WATCH)
-            active = signals_repo.get_active_signal(ticker, signal_type=None) if signals_repo else None
-            if active:
-                if active.get("signal_type") == "BUY":
-                    return self._handle_exit(
-                        ticker=ticker,
-                        df_ind=df_ind,
-                        active=active,
-                        scorer=scorer,
-                        narrative_gen=narrative_gen,
-                        ticker_log=ticker_log,
-                    )
-                # WATCH active — skip, avoid duplicate until it expires
-                return None
-
-            # 10. Score for BUY
-            return self._handle_buy_scoring(
-                ticker=ticker,
-                df_ind=df_ind,
-                scorer=scorer,
-                narrative_gen=narrative_gen,
-                ticker_log=ticker_log,
-            )
-
-        except (CalculationError, InsufficientDataError, StaleDataError) as e:
-            ticker_log.warning("ticker_processing_error", phase="process", error=str(e))
-            return {"ticker": ticker, "status": "failed", "reason": str(e)}
-        except Exception as e:
-            ticker_log.error("ticker_unexpected_error", phase="process", error=str(e))
-            return {"ticker": ticker, "status": "failed", "reason": f"unexpected: {e}"}
-
-    def _handle_partial_candle(self, df: pd.DataFrame, ticker_log) -> pd.DataFrame:
-        """P1-8: Robust partial candle handling.
-
-        Morning mode: always drop candle if last_date >= today (today's candle is partial).
-        Closing mode keeps today's candle for the closed-session scan.
-        """
-        if self._mode == "morning" and not df.empty:
-            last_date = pd.Timestamp(df.index[-1]).date()
-            if last_date >= today_jakarta():
-                df = df.iloc[:-1]
-                ticker_log.info("dropped_partial_candle", phase="normalize", dropped_date=str(last_date))
-        return df
-
-    def _handle_exit(
-        self,
-        *,
-        ticker: str,
-        df_ind: pd.DataFrame,
-        active: dict,
-        scorer: SignalScorer,
-        narrative_gen: NarrativeGenerator,
-        ticker_log,
-    ) -> SignalResult | None:
-        """Handle EXIT check for a ticker with an active signal."""
-        created_str = active.get("created_at", "")
-        if created_str:
-            created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-            days_held = (datetime.now(tz=UTC) - created_dt).days
-        else:
-            days_held = 99
-
-        exit_result = scorer.check_exit(ticker, df_ind, active, days_held=days_held)
-        if exit_result:
-            exit_result.narrative = narrative_gen.generate_exit(exit_result, active)
-            ticker_log.info(
-                "exit_signal_detected",
-                phase="score",
-                exit_status=exit_result.exit_status.value if exit_result.exit_status else "unknown",
-                reasons=exit_result.exit_reasons,
-            )
-            return exit_result
-        return None
-
-    def _handle_buy_scoring(
-        self,
-        *,
-        ticker: str,
-        df_ind: pd.DataFrame,
-        scorer: SignalScorer,
-        narrative_gen: NarrativeGenerator,
-        ticker_log,
-    ) -> SignalResult | None:
-        """Score a ticker for BUY/WATCH signal."""
-        buy_result = scorer.score_buy(ticker, df_ind)
-        ticker_log.info(
-            "scored",
-            phase="score",
-            score=buy_result.score,
-            type=buy_result.signal_type.value,
-            confluence=buy_result.confluence_count,
-        )
-
-        if buy_result.signal_type in (SignalType.BUY, SignalType.WATCH):
-            buy_result.narrative = narrative_gen.generate_buy(buy_result)
-            return buy_result
-        return None
-
-    def _build_messages(
-        self,
-        *,
-        exit_signals: list[SignalResult],
-        buy_signals: list[SignalResult],
-        watch_signals: list[SignalResult],
-        expired: list[dict],
-        signals_repo: SignalsRepo | None,
-        narrative_gen: NarrativeGenerator,
-        run_id: str | None,
-        run_log,
-    ) -> tuple[list[str], list[str], list[str]]:
-        """Build all message lists for Telegram delivery.
-
-        All signals go to main channel — admin only gets errors.
-        """
-        messages: list[str] = []
-        signal_lines: list[str] = []
-        persistence_failures: list[str] = []
-
-        for sig in exit_signals:
-            active = signals_repo.get_active_signal(sig.ticker) if signals_repo else None
-            if active and active.get("created_at"):
-                sig.created_at = active["created_at"]
-            messages.append(format_exit_message(sig, active or {}))
-            pnl = ""
-            close = sig.indicator_snapshot.get("close", 0)
-            entry = (active or {}).get("entry_price", 0)
-            if entry and close:
-                p = (close - entry) / entry * 100
-                pnl = f" \u00b7 {_pct_str_human(p)}"
-            signal_lines.append(f"\U0001f534 EXIT {sig.ticker}{pnl}")
-
-            if signals_repo and active:
-                close_price = int(sig.indicator_snapshot.get("close", 0))
-                status = sig.exit_status or SignalStatus.CLOSED_EXIT_SIGNAL
-                try:
-                    signals_repo.close_signal(
-                        active["id"],
-                        status,
-                        close_price,
-                        active.get("entry_price", 0),
-                    )
-                except Exception as e:
-                    run_log.error("close_signal_failed", phase="persist", ticker=sig.ticker, error=str(e))
-                    persistence_failures.append(f"close_signal:{sig.ticker}:{e}")
-
-        for sig in buy_signals:
-            if signals_repo and run_id:
-                try:
-                    created = signals_repo.create_signal(sig, run_id=run_id)
-                    if created and created.get("created_at"):
-                        sig.created_at = created["created_at"]
-                except Exception as e:
-                    run_log.error("persist_signal_failed", phase="persist", ticker=sig.ticker, error=str(e))
-                    persistence_failures.append(f"create_signal:{sig.ticker}:{e}")
-            messages.append(format_buy_message(sig))
-            signal_lines.append(f"\U0001f7e2 BUY {sig.ticker} \u00b7 Skor {sig.score}")
-
-        # WATCH signals — persisted for cross-run dedup (TTL: 1 day via expire)
-        seen_watch_tickers: set[str] = set()
-        for sig in watch_signals:
-            if sig.ticker in seen_watch_tickers:
-                continue
-            seen_watch_tickers.add(sig.ticker)
-
-            if signals_repo and signals_repo.watch_exists_today(sig.ticker):
-                continue
-
-            if signals_repo and run_id:
-                try:
-                    created = signals_repo.create_signal(sig, run_id=run_id)
-                    if created and created.get("created_at"):
-                        sig.created_at = created["created_at"]
-                except Exception as e:
-                    run_log.warning("watch_persist_failed", phase="persist", ticker=sig.ticker, error=str(e))
-
-            messages.append(format_watch_message(sig))
-            signal_lines.append(f"\U0001f441 WATCH {sig.ticker} \u00b7 Skor {sig.score}")
-
-        for exp in expired:
-            messages.append(format_expired_message(exp))
-            st = exp.get("signal_type", "BUY")
-            signal_lines.append(f"\u23f0 EXP {exp.get('ticker', '?')} \u00b7 {st}")
-
-        return messages, signal_lines, persistence_failures
-
     async def run_weekly_report(self) -> bool:
         """Generate and send weekly performance report."""
         run_log = log.bind(mode="weekly", run_date=self._today)
@@ -986,17 +608,17 @@ class ZENTRAOrchestrator:
 
         if not self._dry_run:
             try:
-                validate_env()
+                _orch.validate_env()
             except ConfigurationError as e:
                 run_log.error("config_validation_failed", error=str(e))
                 return False
 
         if not self._dry_run:
-            db = get_client()
-            signals_repo = SignalsRepo(db)
-            run_logs_repo = RunLogsRepo(db)
+            db = _orch.get_client()
+            signals_repo = _orch.SignalsRepo(db)
+            run_logs_repo = _orch.RunLogsRepo(db)
             run_id = run_logs_repo.create_run("weekly", run_slot="weekly_report")
-            sender = TelegramSender(
+            sender = _orch.TelegramSender(
                 bot_token=get_env("TELEGRAM_BOT_TOKEN"),
                 chat_id=get_env("TELEGRAM_CHAT_ID"),
                 admin_chat_id=get_env("TELEGRAM_ADMIN_CHAT_ID"),
@@ -1053,11 +675,13 @@ class ZENTRAOrchestrator:
         sorted_signals = sorted(recent, key=lambda s: s.get("exit_pct", 0) or 0, reverse=True)
         top_performers = []
         for s in sorted_signals[:5]:
-            top_performers.append({
-                "ticker": s.get("ticker", "?"),
-                "win_rate_pct": 100.0 if (s.get("exit_pct", 0) or 0) > 0 else 0.0,
-                "avg_return_pct": s.get("exit_pct", 0) or 0,
-            })
+            top_performers.append(
+                {
+                    "ticker": s.get("ticker", "?"),
+                    "win_rate_pct": 100.0 if (s.get("exit_pct", 0) or 0) > 0 else 0.0,
+                    "avg_return_pct": s.get("exit_pct", 0) or 0,
+                }
+            )
 
         message = format_weekly_performance_summary(
             date_str=self._today,
