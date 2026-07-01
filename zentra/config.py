@@ -16,6 +16,7 @@ from zentra.exceptions import ConfigurationError
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class SignalType(StrEnum):
     BUY = "BUY"
     EXIT = "EXIT"
@@ -52,10 +53,11 @@ class RunStatus(StrEnum):
 
 class ExitPriority(int, Enum):
     """Deterministic exit priority — lower value = higher priority."""
+
     STOP_LOSS = 1
     TAKE_PROFIT = 2
-    HARD_EXIT = 3      # RSI overbought, etc.
-    SOFT_EXIT = 4      # MACD crossover, score drop, etc.
+    HARD_EXIT = 3  # RSI overbought, etc.
+    SOFT_EXIT = 4  # MACD crossover, score drop, etc.
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +81,7 @@ VALID_TRANSITIONS: dict[SignalStatus, tuple[SignalStatus, ...]] = {
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ValidationResult:
@@ -124,6 +127,7 @@ class SignalResult:
 # Frozen config dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ScoringConfig:
     BUY_THRESHOLD: int = 55
@@ -155,15 +159,40 @@ SCORING = ScoringConfig()
 DATA = DataConfig()
 
 # ---------------------------------------------------------------------------
-# Ticker list (fixed, hardcoded per PRD §1)
+# Ticker list — overridable via ZENTRA_TICKERS env var, falls back to hardcoded default
 # ---------------------------------------------------------------------------
 
 TICKERS: tuple[str, ...] = (
-    "BBCA", "BMRI", "BBRI", "NCKL", "RMKE",
-    "BREN", "CBDK", "PTRO", "BRPT", "BUMI",
-    "DEWA", "BRMS", "ENRG", "AMMN", "OASA",
-    "ADMR", "RAJA", "SIMP", "GZCO", "PGEO",
+    "BBCA",
+    "BMRI",
+    "BBRI",
+    "NCKL",
+    "RMKE",
+    "BREN",
+    "CBDK",
+    "PTRO",
+    "BRPT",
+    "BUMI",
+    "DEWA",
+    "BRMS",
+    "ENRG",
+    "AMMN",
+    "OASA",
+    "ADMR",
+    "RAJA",
+    "SIMP",
+    "GZCO",
+    "PGEO",
 )
+
+
+def get_tickers() -> tuple[str, ...]:
+    """Return ticker list from ZENTRA_TICKERS env var, falling back to TICKERS."""
+    raw = os.getenv("ZENTRA_TICKERS", "").strip()
+    if raw:
+        return tuple(t.strip() for t in raw.split(",") if t.strip())
+    return TICKERS
+
 
 # ---------------------------------------------------------------------------
 # Ticker name mapping (PRD §8.4)
@@ -200,10 +229,15 @@ TICKER_NAMES: dict[str, str] = {
 OHLCV_REQUIRED_COLUMNS: tuple[str, ...] = ("open", "high", "low", "close", "volume")
 
 INDICATOR_REQUIRED_COLUMNS: tuple[str, ...] = (
-    "EMA_9", "EMA_21",
-    "MACD_12_26_9", "MACDh_12_26_9", "MACDs_12_26_9",
+    "EMA_9",
+    "EMA_21",
+    "MACD_12_26_9",
+    "MACDh_12_26_9",
+    "MACDs_12_26_9",
     "RSI_14",
-    "BBL_20_2.0_2.0", "BBM_20_2.0_2.0", "BBU_20_2.0_2.0",
+    "BBL_20_2.0_2.0",
+    "BBM_20_2.0_2.0",
+    "BBU_20_2.0_2.0",
     "ATRr_14",
     "VOL_SMA_5",
 )
@@ -233,20 +267,12 @@ def validate_env(mode: str | None = None) -> None:
     """
     missing = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
     if missing:
-        raise ConfigurationError(
-            f"Missing required env vars: {', '.join(missing)}. "
-            f"Set them in .env or as environment variables."
-        )
+        raise ConfigurationError(f"Missing required env vars: {', '.join(missing)}. Set them in .env or as environment variables.")
 
     # Validate values are not just whitespace
-    empty = [
-        var for var in REQUIRED_ENV_VARS
-        if os.getenv(var, "").strip() == "" and var not in missing
-    ]
+    empty = [var for var in REQUIRED_ENV_VARS if os.getenv(var, "").strip() == "" and var not in missing]
     if empty:
-        raise ConfigurationError(
-            f"Env vars set but empty: {', '.join(empty)}"
-        )
+        raise ConfigurationError(f"Env vars set but empty: {', '.join(empty)}")
 
 
 def get_env(name: str, default: str = "") -> str:
