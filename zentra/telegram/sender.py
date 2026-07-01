@@ -42,12 +42,16 @@ class TelegramSender:
             results.append(success)
             if i < len(messages) - 1:
                 await asyncio.sleep(self.RATE_LIMIT_DELAY)
+        succeeded = sum(results)
+        failed = len(messages) - succeeded
+        log.info("batch_sent", total=len(messages), succeeded=succeeded, failed=failed)
         return results
 
     async def send_admin_alert(self, message: str) -> bool:
         """Send alert to admin chat. Best-effort, does not raise."""
         try:
             await self._send_with_retry(self._admin_chat_id, message)
+            log.info("admin_alert_sent", admin_chat_id=self._admin_chat_id, message_len=len(message))
             return True
         except Exception as e:
             log.error("admin_alert_failed", error=str(e))
@@ -67,6 +71,7 @@ class TelegramSender:
                 text=message,
                 parse_mode="MarkdownV2",
             )
+            log.info("telegram_send_success", chat_id=chat_id, message_len=len(message), parse_mode="MarkdownV2")
         except RetryAfter as e:
             log.warning("telegram_rate_limited", retry_after=e.retry_after)
             await asyncio.sleep(e.retry_after)
